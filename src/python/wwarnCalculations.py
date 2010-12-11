@@ -6,6 +6,8 @@ __maintainer__ = "Cesar Arze"
 __email__ = "carze@som.umaryland.edu"
 __status__ = "Development"
 
+from AutoVivification import AutoVivification
+
 ##
 # This library performs the necessary WWARN calculations to produce both prevalence 
 # and total genotyped statistics
@@ -22,6 +24,9 @@ def calculateWWARNStatistics(state, data, markerList=None):
                 MAKRER_VALUE: {
                     <VALUE>: <COUNT> } } }
     """
+    # Autovivify the dictionary so we don't have to worry about
+    # declaring the nested levels
+    state = AutoVivification()
 
     # Tabulate our sample size and marker counts
     tabulateMarkerCounts(state, data, markerList)
@@ -39,38 +44,49 @@ def tabulateMarkerCounts(state, data, markerList=None):
     of markers
     """
     # Loop over each line of our input and pull out all the information we are
-    # going to need to do our calculation
+    # going to need to take accurate sample size and genotyped counts
     for line in data:
-        studyLabel = line.pop('STUDY_LABEL')
-        investigator = line.pop('INVESTIGATOR') 
-        country = line.pop('COUNTRY')
-        site = line.pop('SITE')
-        patientID = line.pop('PATIENT_ID')
-        age = line.pop('AGE')
+        studyLabel = line[0]
+        investigator = line[1]
+        country = line[2]
+        site = line[3]
+        age = line[4]
 
-        ## TODO: This code currently does not handle marker combinations.
+        # Split out our marker name + type combination and the genotype value 
+        # from our last list element
+        (markerTupleKey, genotypeVal) = parseMarkerComponents(line[5])
+        
+        # Increment count for this marker
+        state[(studyLabel, country, site, investigator)][markerTupleKey][genotypeVal] += 1
 
-        # Now we need to update our state variable to add to its already existing counters
-        # or add a new entry if it hasn't been seen already
-        for marker in line:
-            (locusName, locusPos, _discard) = marker.split('_')
-            markerValue = line[marker]
-
-            # Use setdefault to initialize our dictionary if the tuple keys we are 
-            # about to add don't already exist
-            initializeDefaults(state, studyLabel, country, site, investigator, locusName, locusPos, markerValue)
-            
-            state[(studyLabel, country, site, investigator)][(locusName, locusPos)]['sample_size'] += 1
-            state[(studyLabel, country, site, investigator)][(locusName, locusPos)][markerValue]['count'] += 1
-
-def initializeDefaults(state, study, country, site, investigator, name, position, value):
+def parseMarkerComponents(rawMarkerStr):
     """
-    Initializes the nested structure of the state object to ensure that we do not run
-    into a situation where we attempt to increment or add to an un-instantiated value
+    Parses the raw marker string passed in as input to the calculations library
+    and returns a tuple of tuples containing locus name and position as well
+    as the genotype value(s) for this marker or cominbation of markers
+
+        i.e.
+            ( (pfcrt, 76), 'K') 
+            ( ((pfdhps, 540), (pfdhps, 437)), ['K', 'T'])
     """
-    ## TODO: We will need to instantiate age groups here when they are implemented
-    state.setdefault( (study, country, site, investigator), {} ).setdefault( (name, position), {})['sample_size'] = 0
-    state.setdefault( (study, country, site, investigator), {} ).setdefault( (name, position), {}).setdefault(value, {})['count'] = 0
+    markerList = []
+    genotypeValues = []
+
+    # Our markers will come in the format of <LOCUS NAME>_<LOCUS POS>_<GENOTYPE VAUE> 
+    # (e.x. pfcrt_76_A or pfdhps_540_E + pfdhps_437G)
+    if rawMarkerStr.find('+') != -1:
+        # We are dealing with a marker combination here
+        markers = rawMarkerStr.split(' + ')
+    else:
+        markers = rawMarkerStr
+
+    for marker in markers:
+        (markerName, genotypeVal) = marker.split('_', 2)
+
+        markerList.append(markerName)
+        genotypeValues.append(genotypeVal)
+
+    return ( tuple(markerList), tuple(genotypeValues) )
 
 def calculatePrevalenceStatistic(data):
     """

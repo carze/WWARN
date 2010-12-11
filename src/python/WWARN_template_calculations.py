@@ -4,15 +4,11 @@
 
 import argparse
 
-from wwarnCalculations import tabulateMarkerCounts, calculatePrevalenceStatistic, calculateWWARNStatistics
+from wwarnCalculations import calculateWWARNStatistics
 
-# This is a whitelist of columns of metadata we want to include in the dictionaries we 
-# yield to the calculations code
-META_COL = ['STUDY_LABEL', 'PATIENT_ID', 'COUNTRY', 'SITE', 'INVESTIGATOR', 'AGE']
-
-# When we are generating our dictionary row representation we want to skip
-# adding these columns to the dict
-SKIP_COL = ['STUDY_ID', 'DATE_OF_INCLUSION', 'SAMPLE_COLLECTION_DATE']
+# A blacklist of columns we do not want in our rowLists that are yielded to the calculations
+# library
+SKIP_COL = ['STUDY_ID', 'SAMPLE_COLLECTION_DATE', 'DATE_OF_INCLUSION', 'PATIENT_ID']
 
 def buildArgParser():
     """
@@ -41,27 +37,7 @@ def createFileIterator(inputFile):
     
     # To the genearting!
     for row in wwarnFH:
-        yield generateDictRow(row.rstrip().split('\t'), wwarnHeader)
-
-def generateDictRow(row, header):
-    """ 
-    Takes an input line from the WWARN template file and produces a corresponding dictionary
-    in the following format:
-
-        { STUDY_LABEL, INVESTIGATOR, COUNTRY, SITE, PATIENT_ID, AGE, MARKER_NAME, GENOTYPE_VALUE }
-
-    Because the lines from the WWARN template collate multiple marker - genotype values on the same line
-    we must split these apart and produce one marker - genotype value combo per line
-    """
-    # Generate the metadata dictionary that should be the same for every marker - genotype value combo found
-    # on the input line
-    dictRow = dict( (k,v) for (k,v) in zip(header, row) if k in META_COL) )
-    
-    # Create a list of just markers
-    for i in range(9, len(row)):
-        # Starting from column 9 and onwards we will always have markers
-        dictRow[header[i]] = row[i]
-        yield dictRow
+        yield [v for (k,v) in zip(wwarnHeader, row.rstrip().split('\t')) if k not in SKIP_COL]
 
 def main(parser):
     # Our state variable
