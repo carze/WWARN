@@ -41,9 +41,26 @@ def createFileIterator(inputFile):
     
     # To the genearting!
     for row in wwarnFH:
-        # Each yield should produce a dictionary with the follwing information
-        # { STUDY_LABEL, INVESTIGATOR, COUNTRY, SITE, PATIENT_ID, AGE, MARKER_NAME, GENOTYPE VALUE }
-        dictRow = dict( (k,v) for (k,v) in zip(wwarnHeader, row.rstrip('\n').split('\t')) if k in META_COL )
+        yield generateDictRow(row.rstrip().split('\t'), wwarnHeader)
+
+def generateDictRow(row, header):
+    """ 
+    Takes an input line from the WWARN template file and produces a corresponding dictionary
+    in the following format:
+
+        { STUDY_LABEL, INVESTIGATOR, COUNTRY, SITE, PATIENT_ID, AGE, MARKER_NAME, GENOTYPE_VALUE }
+
+    Because the lines from the WWARN template collate multiple marker - genotype values on the same line
+    we must split these apart and produce one marker - genotype value combo per line
+    """
+    # Generate the metadata dictionary that should be the same for every marker - genotype value combo found
+    # on the input line
+    dictRow = dict( (k,v) for (k,v) in zip(header, row) if k in META_COL) )
+    
+    # Create a list of just markers
+    for i in range(9, len(row)):
+        # Starting from column 9 and onwards we will always have markers
+        dictRow[header[i]] = row[i]
         yield dictRow
 
 def main(parser):
