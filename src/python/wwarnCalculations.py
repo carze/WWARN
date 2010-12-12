@@ -24,17 +24,11 @@ def calculateWWARNStatistics(state, data, markerList=None):
                 MAKRER_VALUE: {
                     <VALUE>: <COUNT> } } }
     """
-    # Autovivify the dictionary so we don't have to worry about
-    # declaring the nested levels
-    state = AutoVivification()
-
     # Tabulate our sample size and marker counts
     tabulateMarkerCounts(state, data, markerList)
     
     # Calculate prevalence
     calculatePrevalenceStatistic(state)
-
-    print state
 
 def tabulateMarkerCounts(state, data, markerList=None):
     """
@@ -46,7 +40,6 @@ def tabulateMarkerCounts(state, data, markerList=None):
     # Loop over each line of our input and pull out all the information we are
     # going to need to take accurate sample size and genotyped counts
     for line in data:
-        print line
         studyLabel = line[0]
         investigator = line[1]
         country = line[2]
@@ -55,40 +48,67 @@ def tabulateMarkerCounts(state, data, markerList=None):
 
         # Split out our marker name + type combination and the genotype value 
         # from our last list element
-        print "DEBUG: %s" % line
-        (markerTupleKey, genotypeVal) = parseMarkerComponents(line[5])
-        
+        markersKey = parseMarkerComponents(line[5])
+        genotypesKey = parseGenotypeValues(line[6])
+
+        #print "DEBUG: %s - %s" % (markersKey, genotypesKey)
+
         # Increment count for this marker
-        state[(studyLabel, country, site, investigator)][markerTupleKey][genotypeVal] += 1
+        incrementGenotypeCount(state, (studyLabel, country, site, investigator), markersKey, genotypesKey)
+        print state
 
 def parseMarkerComponents(rawMarkerStr):
     """
     Parses the raw marker string passed in as input to the calculations library
-    and returns a tuple of tuples containing locus name and position as well
-    as the genotype value(s) for this marker or cominbation of markers
-
-        i.e.
-            ( (pfcrt, 76), 'K') 
-            ( ((pfdhps, 540), (pfdhps, 437)), ['K', 'T'])
+    and returns a tuple of tuples containing locus name and position for as many
+    markers are present in this line of input
     """
     markerList = []
-    genotypeValues = []
-
+    
     # Our markers will come in the format of <LOCUS NAME>_<LOCUS POS>_<GENOTYPE VAUE> 
     # (e.x. pfcrt_76_A or pfdhps_540_E + pfdhps_437G)
     if rawMarkerStr.find('+') != -1:
         # We are dealing with a marker combination here
         markers = rawMarkerStr.split(' + ')
     else:
-        markers = rawMarkerStr
+        markers = [rawMarkerStr]
 
     for marker in markers:
-        (markerName, genotypeVal) = marker.split('_', 2)
+        (locusName, locusPos, markerType) = marker.split('_')
+        markerList.extend( [locusName, locusPos] )
+    
+    return tuple(markerList)
 
-        markerList.append(markerName)
-        genotypeValues.append(genotypeVal)
+def parseGenotypeValues(genotypeStr):
+    """
+    Parses the genotype(s) provided in the input file. Genotypes
+    can be one or many values that are delimited by a '+'. Only in
+    combinations should multiple genotype values be provided. 
+    """
+    genotypeList = []
 
-    return ( tuple(markerList), tuple(genotypeValues) )
+    # If this genotype call corresponds with a marker combination 
+    # it should be in the format of <GENOTYPE1> + <GENOTYPE2> + ... + <GENOTYPEN>
+    if genotypeStr.find(' + ') != -1:
+        genotypes = genotypeStr.split(' + ')
+    else:
+        genotypes = [genotypeStr]
+
+    for genotype in genotypes:
+        genotypeList.extend(genotype)
+    
+    return tuple(genotypeList)
+
+def incrementGenotypeCount(dict, metaKey, markerKey, genotype):
+    """
+    Increment the state dictionary with the three keys provided. If the key does
+    not already exist in the dictionary the default value is set to 1 otherwise
+    it is incremented by 1
+    """
+    try:
+        dict[metaKey][markerKey][genotype] += 1
+    except KeyError:
+        dict.setdefault(metaKey, {}).setdefault(markerKey, {}).setdefault(genotype, 1)
 
 def calculatePrevalenceStatistic(data):
     """
