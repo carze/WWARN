@@ -6,9 +6,9 @@ import argparse
 
 from wwarnCalculations import calculateWWARNStatistics
 
-# A blacklist of columns we do not want in our rowLists that are yielded to the calculations
-# library
-SKIP_COL = ['STUDY_ID', 'SAMPLE_COLLECTION_DATE', 'DATE_OF_INCLUSION', 'PATIENT_ID']
+# A white list of columns that we want to capture and pass into our calculations
+# code
+META_COL = ['STUDY_LABEL', 'INVESTIGATOR', 'COUNTRY', 'SITE', 'AGE']
 
 def buildArgParser():
     """
@@ -36,8 +36,17 @@ def createFileIterator(inputFile):
     wwarnHeader = wwarnFH.readline().rstrip('\n').split('\t')   
     
     # To the genearting!
+    # TODO: Fix up this ugly hack perhaps using some python tricks
     for row in wwarnFH:
-        yield [v for (k,v) in zip(wwarnHeader, row.rstrip().split('\t')) if k not in SKIP_COL]
+        rowList = [v for (k,v) in zip(wwarnHeader, row.rstrip().split('\t')) if k in META_COL]
+        
+        # Now add both our marker name and genotype value to the list
+        # We can do this by iterating over row elements 9 and over as these 
+        # are guaranteed to be our markers
+        dataElems = row.rstrip().split('\t')
+        for i in range(9, len(dataElems)):
+            rowList.extend([ wwarnHeader[i], dataElems[i] ])
+            yield rowList
 
 def main(parser):
     # Our state variable
