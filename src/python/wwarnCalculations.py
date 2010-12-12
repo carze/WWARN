@@ -6,8 +6,6 @@ __maintainer__ = "Cesar Arze"
 __email__ = "carze@som.umaryland.edu"
 __status__ = "Development"
 
-from AutoVivification import AutoVivification
-
 ##
 # This library performs the necessary WWARN calculations to produce both prevalence 
 # and total genotyped statistics
@@ -30,6 +28,8 @@ def calculateWWARNStatistics(state, data, markerList=None):
     # Calculate prevalence
     calculatePrevalenceStatistic(state)
 
+    print state
+
 def tabulateMarkerCounts(state, data, markerList=None):
     """
     This function iterates over the source of data and updates
@@ -51,11 +51,8 @@ def tabulateMarkerCounts(state, data, markerList=None):
         markersKey = parseMarkerComponents(line[5])
         genotypesKey = parseGenotypeValues(line[6])
 
-        #print "DEBUG: %s - %s" % (markersKey, genotypesKey)
-
         # Increment count for this marker
         incrementGenotypeCount(state, (studyLabel, country, site, investigator), markersKey, genotypesKey)
-        print state
 
 def parseMarkerComponents(rawMarkerStr):
     """
@@ -94,8 +91,7 @@ def parseGenotypeValues(genotypeStr):
     else:
         genotypes = [genotypeStr]
 
-    for genotype in genotypes:
-        genotypeList.extend(genotype)
+    genotypeList.extend(genotypes)
     
     return tuple(genotypeList)
 
@@ -105,10 +101,18 @@ def incrementGenotypeCount(dict, metaKey, markerKey, genotype):
     not already exist in the dictionary the default value is set to 1 otherwise
     it is incremented by 1
     """
-    try:
-        dict[metaKey][markerKey][genotype] += 1
-    except KeyError:
-        dict.setdefault(metaKey, {}).setdefault(markerKey, {}).setdefault(genotype, 1)
+    # Check if our keys have already been initialized in our dictionary and if 
+    # not we want to do so and return 0
+    v = dict.setdefault(metaKey, {}).setdefault(markerKey, {}).setdefault(genotype, {}).get('genotyped', 0)
+    v += 1
+
+    # Now do the same for the sample size
+    s = dict.setdefault(metaKey, {}).setdefault(markerKey, {}).get('sample_size', 0)
+    s += 1
+
+    dict[metaKey][markerKey]['sample_size'] = s
+    dict[metaKey][markerKey][genotype]['genotyped'] = v
+
 
 def calculatePrevalenceStatistic(data):
     """
@@ -121,12 +125,10 @@ def calculatePrevalenceStatistic(data):
     """    
     # Need to loop over the dictionary and do our calculations
     for dataElemList in generateCountList(data):
-        # Pick up our sample size and genotyped count 
-        # to do our calculation
         sampleSize = dataElemList[2]
-        markerCount = dataElemList[4]
-        markerPrevalence = markerCount / sampleSize
-        
+        markerGenotyped = dataElemList[4]
+        markerPrevalence = float(markerGenotyped) / sampleSize
+
         data[ dataElemList[0] ][ dataElemList[1] ][ dataElemList[3] ]['prevalence'] = markerPrevalence 
 
 def generateCountList(data):    
@@ -137,24 +139,17 @@ def generateCountList(data):
 
     [ (STUDY_LABEL, COUNTRY, SITE, INVESTIGATOR, PATIENT_ID), (LOCUS_NAME, LOCUS_POS), SAMPLE_SIZE, MARKER_VALUE, COUNT)
     """     
-    dataPrevList = []
-
     for outerTupleKey in data:
-        dataPrevList.append(outerTupleKey)
-
         for locusTuple in data[outerTupleKey]:
-            dataPrevList.append(locusTuple)
-            
-            # Add sample size to the list
+            # Get sample size
             sampleSize = data[outerTupleKey][locusTuple]['sample_size']
-            dataPrevList.append(sampleSize)
 
             for markerValue in data[outerTupleKey][locusTuple]:
-                # If we encounter our sample size we want to skip over it
+                # Hacky but we need to make sure to skip sample size if 
+                # we run into it.
                 if markerValue == 'sample_size':
                     continue
                 
-                markerCount = data[outerTupleKey][locusTuple][markerValue]['count']
-                dataPrevList.extend([markerValue, markerCount])
-
+                markerCount = data[outerTupleKey][locusTuple][markerValue]['genotyped']
+                dataPrevList = [outerTupleKey, locusTuple, sampleSize, markerValue, markerCount]
                 yield dataPrevList

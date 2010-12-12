@@ -38,14 +38,14 @@ def createFileIterator(inputFile):
     # To the genearting!
     # TODO: Fix up this ugly hack perhaps using some python tricks
     for row in wwarnFH:
-        rowList = [v for (k,v) in zip(wwarnHeader, row.rstrip().split('\t')) if k in META_COL]
+        rowMeta = [v for (k,v) in zip(wwarnHeader, row.rstrip().split('\t')) if k in META_COL]
         
         # Now add both our marker name and genotype value to the list
         # We can do this by iterating over row elements 9 and over as these 
         # are guaranteed to be our markers
         dataElems = row.rstrip().split('\t')
         for i in range(9, len(dataElems)):
-            rowList.extend([ wwarnHeader[i], dataElems[i] ])
+            rowList = rowMeta + [ wwarnHeader[i], dataElems[i] ]
             yield rowList
 
 def main(parser):
