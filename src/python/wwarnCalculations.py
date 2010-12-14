@@ -200,7 +200,6 @@ def generateCountList(data):
         for locusTuple in data[outerTupleKey]:
             for genotype in [x for x in data[outerTupleKey][locusTuple] if x != "sample_size"]:
                 for group in data[outerTupleKey][locusTuple][genotype]:
-                    print "DEBUG: %r - %r - %r - %r" % (outerTupleKey, locusTuple, genotype, group)
                     sampleSize = data[outerTupleKey][locusTuple]['sample_size'][group]
                     genotypedCount = data[outerTupleKey][locusTuple][genotype][group]['genotyped']
                     dataPrevList = [outerTupleKey, locusTuple, genotype, group, sampleSize, genotypedCount]

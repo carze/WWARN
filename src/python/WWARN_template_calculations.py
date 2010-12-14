@@ -3,10 +3,9 @@
 # produced by the WWARN template as input data.
 
 import argparse
-import re
 
 from wwarnCalculations import calculateWWARNStatistics
-from string import strip
+from pprint import pprint
 
 # A white list of columns that we want to capture and pass into our calculations
 # code
@@ -29,22 +28,31 @@ def buildArgParser():
 
     return args
 
-def parseAgeGroups(groups):
+def parseAgeGroups(groupsFile):
     """
-    Returns a list of age groups to bin our statistics calculations. Input must be a 
-    comma-delimited list in the following format:
+    Parses the provided age groups file and returns a list of tuples containing the
+    desired age groups for the accompanying WWARN data to be binned into
 
-        None-1, 1-4, 5-6, 12-None
-    
-    Encountering 'None' in a range can either be interpreted (using the examples above)
-    as < 1 and > 12
+    Input file should be a tab-delimited file of the following format:
+       
+       <LOWER BOUNDS>\\t<UPPER BOUNDS>\\t<LABEL>
+       None\\t\\t1< 1
+       1\\t4\\t1-4
+
+    First column contains lower bound of group, second column contains upper bound of group
+    while the third column contains the label that should act as the key in the dictionary 
+    containing results returned by our calculations library.
+
+    Returned list is of the following format:
+        
+       [ (<LOWER>, <UPPER>, <LABEL>), (<LOWER>, <UPPER>, <LABEL) ... ]
     """
     ageList = []
 
-    groups = ''.join( groups.split() )  # Strip any white space
-    for ageRange in [x for x in groups.split(',')]:
-        (lower, upper) = ageRange.split('-')
-
+    groupsFH = open(groupsFile)
+    for line in groupsFH:
+        (lower, upper, label) = line.rstrip('\n').split('\t')
+        
         # Cast our variables to float if they are not 'None'
         # And None if they are 'None'
         if lower == 'None':
@@ -57,7 +65,7 @@ def parseAgeGroups(groups):
             lower = float(lower)
             upper = float(upper)
 
-        ageList.append( (lower, upper) )
+        ageList.append( (lower, upper, label) )
 
     return ageList
 
@@ -85,7 +93,6 @@ def createFileIterator(inputFile):
         # want to loop over the header to make sure we don't try to pull in any extra
         # blank spaces at the end of the line
         for i in range(9, len(wwarnHeader)):
-            print "%r: %r" % (rowMeta[5], row)
             rowList = rowMeta + [ wwarnHeader[i], dataElems[i] ]
             yield rowList
 
@@ -107,16 +114,90 @@ def createOutputWWARNTables(data, output):
     """
     wwarnOut = open(output, 'w')
     
-    for markersDict in generateOutputDict(data):
-        for site in markersDict:
-            pass
+    # We need to grab (and sort) all the genotypes we will be dealing with
+    # for this input file
+    for outDict in generateOutputDict(data):
+        pprint (outDict, indent=2)
+        for (locusTuple, siteIter) in outDict.iteritems():
+            # Print out our header here; we need one table per marker 
+            # so we will be printing the header out multiple times
+            header = parseHeaderList( siteIter.pop('header') )
+            wwarnOut.write( "".join(locusTuple) + "\n" )
+            wwarnOut.write( "Site\tAge group\tSample size\t%s\tNull (genotyping failure)\tNo data (samples not genotyped for this marker)\n" % "\t".join(list(header)) )
+
+            for (site, groupsIter) in siteIter.iteritems():
+                wwarnOut.write("%s" % site)
+                
+                for (group, genotypeIter) in groupsIter.iteritems():
+                    wwarnOut.write("\t%s\t" % group)
+                    wwarnOut.write( "%s\t" % genotypeIter.pop('sample_size') )
+
+                    for genotype in genotypeIter:
+                        wwarnOut.write( "%s\t" %genotypeIter.get(genotype) )
+                    wwarnOut.write('\n')
+                wwarnOut.write("\n")
+            wwarnOut.write("\n")
 
 def generateOutputDict(data):
     """
     Generates a more friendly output data structure to iterate over when printout 
-    out the sample size and prevalence tables for the WWARN contributor report
+    out the sample size and prevalence tables for the WWARN contributor report.
+    Format for returned dictionary is below:
+    
+      {  <MARKER NAME>: {
+          <SITE>: {
+              <GROUP>: { [SAMPLE_SIZE, PREVALENCE VALUES.... ]
     """
-    pass
+    outputDict = {}
+
+    for (metadataKey, locusIter) in data.iteritems():
+        # We need to pull out site from here to be used as one our keys
+        site = metadataKey[2]
+
+        # We also need a list of of our sorted genotypes that will be used
+        # to generate our table header
+        for (markerKey, genotypesIter) in locusIter.iteritems():
+            outputDict.setdefault(markerKey, {}).setdefault(site, {})
+
+            # Sort our genotypes for our header/printing out 
+            sortedGenotypes = [x for x in sorted( genotypesIter.keys() ) if x != 'sample_size']
+            outputDict[markerKey]['header'] = sortedGenotypes
+            
+            # Now loop over all our genotypes and grab all the prevalences 
+            # to go alongsideo our sample sizes
+            for genotype in sortedGenotypes:
+                statisticsList = []
+                sortedGroups = sorted( genotypesIter[genotype].keys() )
+               
+                for group in sortedGroups:
+                   # Add sample size
+                   sampleSize = locusIter[markerKey]['sample_size'][group]
+                   outputDict[markerKey][site].setdefault(group, {}).setdefault('sample_size', sampleSize)
+                   
+                   # Add prevalence
+                   prevalence = genotypesIter[genotype][group]['prevalence']
+                   outputDict[markerKey][site][group].setdefault(genotype, prevalence)
+
+        yield outputDict
+
+def parseHeaderList(headerList):
+    """
+    Parse the list of headers provided in the dictionary containing 
+    our results. We want to convert any markers from tuple format to 
+    a (list of) strings
+    """
+    headerStrList = []
+
+    for headerTuple in headerList:
+        # If our tuple is greater than size 1 we are dealing with 
+        # combination markers and need to join them into one string with 
+        # '+' in between them
+        if len(headerTuple) > 1:
+            headerStrList.append( " + ".join(headerTuple) )
+        else:
+            headerStrList.append( "".join(headerTuple) )
+
+    return headerStrList
 
 def main(parser):
     # Our state variable
@@ -129,9 +210,9 @@ def main(parser):
     # our file and returns a dictionary containing all the information we need. Alongside 
     # this a dictionary where results should be written to is also passed in
     calculateWWARNStatistics(wwarnDataDict, createFileIterator(parser.input_file), parser.marker_list, ageGroups)
-    
+
     # Finally print the statistics to the desired output file
-    #createOutputWWARNTables(wwarnDataDict, parser.output_file)
+    createOutputWWARNTables(wwarnDataDict, parser.output_file)
 
 if __name__ == "__main__":
     main(buildArgParser())        
