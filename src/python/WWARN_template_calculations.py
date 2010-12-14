@@ -128,15 +128,16 @@ def createOutputWWARNTables(data, output):
             for (site, groupsIter) in siteIter.iteritems():
                 wwarnOut.write("%s" % site)
                 
-                for (group, genotypeIter) in groupsIter.iteritems():
+                for group in groupsIter:
+                    print "DEBUG: %s" % group
                     wwarnOut.write("\t%s\t" % group)
-                    wwarnOut.write( "%s\t" % genotypeIter.pop('sample_size') )
-
+                    wwarnOut.write("\t".join( ["%s" % el for el in groupsIter.get(group)] ) + "\n")
+                    
+"""
                     for genotype in genotypeIter:
                         wwarnOut.write( "%s\t" %genotypeIter.get(genotype) )
                     wwarnOut.write('\n')
-                wwarnOut.write("\n")
-            wwarnOut.write("\n")
+"""                    
 
 def generateOutputDict(data):
     """
@@ -171,12 +172,15 @@ def generateOutputDict(data):
                
                 for group in sortedGroups:
                    # Add sample size
-                   sampleSize = locusIter[markerKey]['sample_size'][group]
-                   outputDict[markerKey][site].setdefault(group, {}).setdefault('sample_size', sampleSize)
+                   sampleSize = locusIter[markerKey]['sample_size'].get(group, None)
+
+                   if sampleSize is not None:
+                       outputDict[markerKey][site].setdefault(group, []).append(sampleSize)
+                       locusIter[markerKey]['sample_size'].pop(group)
                    
                    # Add prevalence
                    prevalence = genotypesIter[genotype][group]['prevalence']
-                   outputDict[markerKey][site][group].setdefault(genotype, prevalence)
+                   outputDict[markerKey][site][group].append(prevalence)
 
         yield outputDict
 
@@ -210,6 +214,8 @@ def main(parser):
     # our file and returns a dictionary containing all the information we need. Alongside 
     # this a dictionary where results should be written to is also passed in
     calculateWWARNStatistics(wwarnDataDict, createFileIterator(parser.input_file), parser.marker_list, ageGroups)
+    
+    pprint (wwarnDataDict, indent=2)
 
     # Finally print the statistics to the desired output file
     createOutputWWARNTables(wwarnDataDict, parser.output_file)
