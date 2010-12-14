@@ -26,11 +26,9 @@ def calculateWWARNStatistics(state, data, markerList=None, ageGroups=None):
     """
     # Tabulate our sample size and marker counts
     tabulateMarkerCounts(state, data, markerList, ageGroups)
-    
-    # Calculate prevalence
-   # calculatePrevalenceStatistic(state)
 
-    pprint(state, indent=2)
+    # Calculate prevalence
+    calculatePrevalenceStatistic(state)
 
 def tabulateMarkerCounts(state, data, markerList, ageGroups):
     """
@@ -46,23 +44,15 @@ def tabulateMarkerCounts(state, data, markerList, ageGroups):
         investigator = line[1]
         country = line[2]
         site = line[3]
-        
-        print "DEBUG: %s" % line
+        age = line[5]
 
         # Split out our marker name + type combination and the genotype value 
         # from our last list element
         markersKey = parseMarkerComponents(line[6])
         genotypesKey = parseGenotypeValues(line[7])
 
-        # If an age group is passed in we want to figure out what group this current line falls into
-        if ageGroups and line[5]:
-            age = float(line[5])
-            ageKey = assignAgeGroup(ageGroups, age)
-        else:
-            ageKey = None
-
         # Increment count for this marker
-        incrementGenotypeCount(state, (studyLabel, country, site, investigator), markersKey, genotypesKey, ageKey)
+        incrementGenotypeCount(state, (studyLabel, country, site, investigator), markersKey, genotypesKey, ageGroups, age)
 
 def parseMarkerComponents(rawMarkerStr):
     """
@@ -102,51 +92,9 @@ def parseGenotypeValues(genotypeStr):
         genotypes = [genotypeStr]
 
     genotypeList.extend(genotypes)
-    
     return tuple(genotypeList)
 
-def assignAgeGroup(groups, age):
-    """
-    Places the age passed into the function into one of the groups 
-    defined in the groups list. This list should contain a tuple of
-    lower and upper bound ages that can be used to classify any age in the
-    data set passed in
-    """
-    groupKey = ""
-
-    for group in groups:
-        # The groups list should contain a list of age groups in the following
-        # tuple format:
-        #
-        #     [ (lower, upper), (lower, upper), .... ]
-        #
-        # We should always assume that our grouping will be lower <= age <= upper 
-        # and our group key will be returned as "lower - upper".
-        # 
-        # The two fringe cases we will have to look out for will be (0, upper) 
-        # and (lower, 200) in these cases we are dealing with edge cases such as   
-        # (0, 1) and (12, 200) which would be represented as age < 1 and
-        # age > 12
-        (lower, upper) = group   
-
-        if lower is None:
-            if age < upper:
-                groupKey = "< %s" % upper
-                break
-        
-        if upper is None:
-            if age > lower:
-                groupKey = "> %s" % lower
-                break
-    
-        if lower is not None and upper is not None:
-            if lower <= age <= upper:
-                groupKey = "%s - %s" % (lower, upper)
-                break
-
-    return groupKey
-
-def incrementGenotypeCount(dict, metaKey, markerKey, genotype, ageKey):
+def incrementGenotypeCount(dict, metaKey, markerKey, genotype, groups, age):
     """
     Increment the state dictionary with the three keys provided. If the key does
     not already exist in the dictionary the default value is set to 1 otherwise
@@ -168,14 +116,55 @@ def incrementGenotypeCount(dict, metaKey, markerKey, genotype, ageKey):
     dict[metaKey][markerKey][genotype]['All']['genotyped'] = genotypeAll
 
     # If our age key is not None we need to add this age group
-    if ageKey is not None:
-        sampleAge = dict[metaKey][markerKey].setdefault('sample_size', {}).get(ageKey, 0)
-        sampleAge += 1 
-        dict[metaKey][markerKey]['sample_size'][ageKey] = sampleAge
+    if groups and age:
+        incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, float(age))
 
-        genotypeAge = dict[metaKey][markerKey][genotype].setdefault(ageKey, {}).get('genotyped', 0)
-        genotypeAge += 1
-        dict[metaKey][markerKey][genotype][ageKey]['genotyped'] = genotypeAge
+def incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age):
+    """
+    Initializes all age groups in our statistics dictionary and increments
+    only the age groups where a row of data containing that age was found
+    """
+    groupKey = ""
+
+    for group in groups:
+        # The groups list should contain a list of age groups in the following
+        # tuple format:
+        #
+        #     [ (lower, upper, label), (lower, upper, label), .... ]
+        #
+        # We should always assume that our grouping will be lower <= age <= upper 
+        # and our group key will be returned as "lower - upper".
+        # 
+        # The two fringe cases we will have to look out for will be (0, upper) 
+        # and (lower, 200) in these cases we are dealing with edge cases such as   
+        # (0, 1) and (12, 200) which would be represented as age < 1 and
+        # age > 12
+        #
+        # The third element in the tuple, 'label', will represent the key assigned 
+        #in the dictionary housing our statistics
+        (lower, upper, label) = group   
+
+        # First initialize this level of nesting in our dictionary if it hasn't 
+        # already been initialized
+        dict[metaKey][markerKey]['sample_size'].setdefault(label, 0)
+        dict[metaKey][markerKey][genotype].setdefault(label, {}).setdefault('genotyped', 0)
+
+        # Now increment the correct category that the patient providing this 
+        # data fell under
+        if lower is None:
+            if age < upper:
+                groupKey = label
+        
+        if upper is None:
+            if age > lower:
+                groupKey = label
+    
+        if lower is not None and upper is not None:
+            if lower <= age <= upper:
+                groupKey = label
+
+    dict[metaKey][markerKey]['sample_size'][groupKey] += 1
+    dict[metaKey][markerKey][genotype][groupKey]['genotyped'] += 1
 
 def calculatePrevalenceStatistic(data):
     """
@@ -190,7 +179,12 @@ def calculatePrevalenceStatistic(data):
     for dataElemList in generateCountList(data):
         sampleSize = dataElemList[4]
         markerGenotyped = dataElemList[5]
-        markerPrevalence = float(markerGenotyped) / sampleSize
+
+        # If our genotyped count is 0 we want to set prevalence to 0 
+        # to avoid division by zero
+        markerPrevalence = 0
+        if float(markerGenotyped) > 0:
+            markerPrevalence = float(markerGenotyped) / sampleSize
 
         data[ dataElemList[0] ][ dataElemList[1] ][ dataElemList[2] ][ dataElemList[3] ]['prevalence'] = markerPrevalence 
 
@@ -206,6 +200,7 @@ def generateCountList(data):
         for locusTuple in data[outerTupleKey]:
             for genotype in [x for x in data[outerTupleKey][locusTuple] if x != "sample_size"]:
                 for group in data[outerTupleKey][locusTuple][genotype]:
+                    print "DEBUG: %r - %r - %r - %r" % (outerTupleKey, locusTuple, genotype, group)
                     sampleSize = data[outerTupleKey][locusTuple]['sample_size'][group]
                     genotypedCount = data[outerTupleKey][locusTuple][genotype][group]['genotyped']
                     dataPrevList = [outerTupleKey, locusTuple, genotype, group, sampleSize, genotypedCount]
