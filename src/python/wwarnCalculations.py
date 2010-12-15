@@ -46,6 +46,11 @@ def tabulateMarkerCounts(state, data, markerList, ageGroups):
         site = line[3]
         age = line[5]
 
+        # Check if our age is empty (empty string or NODATA) and if so set it
+        # equal to None
+        if age in ['', 'NODATA']:
+            age = None
+
         # Split out our marker name + type combination and the genotype value 
         # from our last list element
         markersKey = parseMarkerComponents(line[6])
@@ -116,15 +121,15 @@ def incrementGenotypeCount(dict, metaKey, markerKey, genotype, groups, age):
     dict[metaKey][markerKey][genotype]['All']['genotyped'] = genotypeAll
 
     # If our age key is not None we need to add this age group
-    if groups and age:
-        incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, float(age))
+    if groups:
+        incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age)
 
 def incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age):
     """
     Initializes all age groups in our statistics dictionary and increments
     only the age groups where a row of data containing that age was found
     """
-    groupKey = ""
+    groupKey = None
 
     for group in groups:
         # The groups list should contain a list of age groups in the following
@@ -149,22 +154,25 @@ def incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age):
         dict[metaKey][markerKey]['sample_size'].setdefault(label, 0)
         dict[metaKey][markerKey][genotype].setdefault(label, {}).setdefault('genotyped', 0)
 
+        
         # Now increment the correct category that the patient providing this 
         # data fell under
-        if lower is None:
-            if age < upper:
-                groupKey = label
-        
-        if upper is None:
-            if age > lower:
-                groupKey = label
-    
-        if lower is not None and upper is not None:
-            if lower <= age <= upper:
-                groupKey = label
+        if age is not None:
+            if lower is None:
+                if float(age) < upper:
+                    groupKey = label
+            
+            if upper is None:
+                if float(age) > lower:
+                    groupKey = label
 
-    dict[metaKey][markerKey]['sample_size'][groupKey] += 1
-    dict[metaKey][markerKey][genotype][groupKey]['genotyped'] += 1
+            if lower is not None and upper is not None:       
+                if lower <= float(age) <= upper:
+                    groupKey = label
+     
+    if groupKey is not None: 
+        dict[metaKey][markerKey]['sample_size'][groupKey] += 1
+        dict[metaKey][markerKey][genotype][groupKey]['genotyped'] += 1
 
 def calculatePrevalenceStatistic(data):
     """
