@@ -72,6 +72,23 @@ def parseAgeGroups(groupsFile):
 
     return ageList
 
+def parseMarkerList(markerListFile):
+    """
+    Parses the optional list of valid genotypes for a given marker and returns
+    a dictionary that can be used to look up all of these genotypes. This is useful
+    if we want to see which genotypes were not genotyped in a set of data
+    """
+    validGenotypes = {}
+
+    # Open file and grab all genotypes (comma-delimited list) to be placed
+    # in our dictionary
+    genotypeListFH = open(markerListFile)
+    for line in genotypeListFH:
+        (marker, genotypes) = line.rstrip('\n').split('\t')
+        validGenotypes[marker] = [x for x in genotypes.split(',')]
+
+    return validGenotypes
+
 def createFileIterator(inputFile):
     """
     Takes an input file and creates a generateor of said file returning
@@ -92,8 +109,6 @@ def createFileIterator(inputFile):
         # are guaranteed to be our markers
         dataElems = row.rstrip('\n').split('\t')
 
-        print "DBEUG: %r" % row
-        print "METADATA: %r" % rowMeta
         # Instead of looping over the number of elements in the dataElems list we 
         # want to loop over the header to make sure we don't try to pull in any extra
         # blank spaces at the end of the line
@@ -101,7 +116,7 @@ def createFileIterator(inputFile):
             rowList = rowMeta + [ wwarnHeader[i], dataElems[i] ]
             yield rowList
 
-def createOutputWWARNTables(data, output):
+def createOutputWWARNTables(data, genotypeList, output):
     """
     Writes WWARN output tables for sample size and prevalence statistics
     in the following format:
@@ -126,12 +141,13 @@ def createOutputWWARNTables(data, output):
     # We need to grab (and sort) all the genotypes we will be dealing with
     # for this input file
     for outDict in generateOutputDict(data):
-        pprint (outDict, indent=2)
-        exit(0)
+        #pprint (outDict, indent=2)
         for (locusTuple, siteIter) in outDict.iteritems():
             # Print out our header here; we need one table per marker 
             # so we will be printing the header out multiple times
-            header = parseHeaderList( siteIter.pop('header') )
+            markerName = locusTuple[0] + locusTuple[1]
+            header = genotypeList[markerName]
+
             wwarnOut.write( "".join(locusTuple) + "\n" )
             wwarnOut.write( "Site\tAge group\tSample size\t%s\tNull (genotyping failure)\tNo data (samples not genotyped for this marker)\n" % "\t".join(list(header)) )
 
@@ -139,9 +155,15 @@ def createOutputWWARNTables(data, output):
             for (site, groupsIter) in siteIter.iteritems():
                 wwarnOut.write("%s" % site)
                 
-                for group in groupsIter:
-                    wwarnOut.write("\t%s\t" % group)
-                    wwarnOut.write("\t".join( ["%s" % el for el in groupsIter.get(group)] ) + "\n")
+                print dir(groupsIter)
+                pprint (groupsIter, indent=2)
+                (k, genotypesIter) = groupsIter.iteritems()
+                for (group) in groupsIter:
+                    wwarnOut.write("\t%s" % group)
+
+                    for genotype in header:
+                        print "DEBUG: %s - %s - %s" % (header, genotype, genotypesIter.get( tuple(genotype), 0))
+                        wwarnOut.write("\t%s" % genotypesIter.get(genotype, 0))
 
         print wwarnOut.write("\n\n")                    
 
@@ -178,7 +200,7 @@ def generateOutputDict(data):
             # Now loop over all our genotypes and grab all the prevalences 
             # to go alongside our sample sizes
             for genotype in sortedGenotypes:
-                statisticsList = []
+                #statisticsList = []
                 sortedGroups = sorted( genotypesIter[genotype].keys() )
                
                 for group in sortedGroups:
@@ -188,13 +210,17 @@ def generateOutputDict(data):
                    # Since we don't want to add sample size for every prevalence value
                    # we need to pop off sample size once its been added once. 
                    # TODO: Find a better way to handle this
+                   outputDict[markerKey][site].setdefault(group, {})
+
+
                    if sampleSize is not None:
-                       outputDict[markerKey][site].setdefault(group, []).append(sampleSize)
+                       outputDict[markerKey][site][group]['sample_size'] = sampleSize
                        locusIter[markerKey]['sample_size'].pop(group)
                    
                    # Add prevalence
+                   outputDict[markerKey][site][group].setdefault(genotype, {})
                    prevalence = genotypesIter[genotype][group]['prevalence']
-                   outputDict[markerKey][site][group].append(prevalence)
+                   outputDict[markerKey][site][group][genotype] = prevalence
 
     yield outputDict
 
@@ -230,12 +256,12 @@ def main(parser):
     # We can invoke the calculations library by passing in an iterator that iterates over 
     # our file and returns a dictionary containing all the information we need. Alongside 
     # this a dictionary where results should be written to is also passed in
-    calculateWWARNStatistics(wwarnDataDict, createFileIterator(parser.input_file), parser.marker_list, ageGroups)
+    calculateWWARNStatistics(wwarnDataDict, createFileIterator(parser.input_file), ageGroups)
     
     #pprint (wwarnDataDict, indent=2)
 
     # Finally print the statistics to the desired output file
-    createOutputWWARNTables(wwarnDataDict, parser.output_file)
+    createOutputWWARNTables(wwarnDataDict, markerGenotypes, parser.output_file)
 
 if __name__ == "__main__":
     main(buildArgParser())        

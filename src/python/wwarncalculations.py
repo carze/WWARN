@@ -10,9 +10,7 @@ __status__ = "Development"
 # This library performs the necessary WWARN calculations to produce both prevalence 
 # and total genotyped statistics
 
-from pprint import pprint
-
-def calculateWWARNStatistics(state, data, markerList=None, ageGroups=None):
+def calculateWWARNStatistics(state, data, ageGroups=None):
     """
     Calculates the sample size and prevalence statistics for the data
     source passed in. Returned in a dictionary built in the following 
@@ -25,12 +23,12 @@ def calculateWWARNStatistics(state, data, markerList=None, ageGroups=None):
                     <VALUE>: <COUNT> } } }
     """
     # Tabulate our sample size and marker counts
-    tabulateMarkerCounts(state, data, markerList, ageGroups)
+    tabulateMarkerCounts(state, data, ageGroups)
 
     # Calculate prevalence
     calculatePrevalenceStatistic(state)
 
-def tabulateMarkerCounts(state, data, markerList, ageGroups):
+def tabulateMarkerCounts(state, data, ageGroups):
     """
     This function iterates over the source of data and updates
     a state variable used to keep track of the current sample 
@@ -46,6 +44,10 @@ def tabulateMarkerCounts(state, data, markerList, ageGroups):
         site = line[3]
         age = line[5]
 
+        # Our outer key in the calculations dictionary is a tuple containing 
+        # some metadata: study label, country, site, investigator
+        metadataKey = (studyLabel, country, site, investigator)
+
         # Check if our age is empty (empty string or NODATA) and if so set it
         # equal to None
         if age in ['', 'NODATA']:
@@ -57,7 +59,7 @@ def tabulateMarkerCounts(state, data, markerList, ageGroups):
         genotypesKey = parseGenotypeValues(line[7])
 
         # Increment count for this marker
-        incrementGenotypeCount(state, (studyLabel, country, site, investigator), markersKey, genotypesKey, ageGroups, age)
+        incrementGenotypeCount(state, metadataKey, markersKey, genotypesKey, ageGroups, age)
 
 def parseMarkerComponents(rawMarkerStr):
     """
@@ -154,7 +156,6 @@ def incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age):
         dict[metaKey][markerKey]['sample_size'].setdefault(label, 0)
         dict[metaKey][markerKey][genotype].setdefault(label, {}).setdefault('genotyped', 0)
 
-        
         # Now increment the correct category that the patient providing this 
         # data fell under
         if age is not None:
