@@ -222,7 +222,6 @@ def main(parser):
     wwarnDataDict = {}
     
     # If the age groups parameter is used we want to parse it.
-
     # Likewise if we have a marker list we want to create a list of all possible
     # genotypes
     ageGroups = parseAgeGroups(parser.age_groups)
