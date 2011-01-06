@@ -5,7 +5,7 @@
 import argparse
 
 from wwarncalculations import calculateWWARNStatistics
-from wwarnexceptions import AgeGroupException
+from wwarnexceptions import AgeGroupException, CopyNumberGroupException
 from pprint import pprint
 
 # A white list of columns that we want to capture and pass into our calculations
@@ -24,6 +24,8 @@ def buildArgParser():
                             + 'looked at in tabulating these statistics.')
     parser.add_argument('-a', '--age_groups', required=False, help='A comma-delimited list of optional age groups '
                             + 'that results should also be categorized under.')
+    parser.add_argument('-c', '--copy_number_groups', required=False, help='A list of groups that copy numberd data '
+                            + 'should be binned into.')
     parser.add_argument('-o', '--output_file', required=True, help='Desired output file containing WWARN calculations.')
     args = parser.parse_args()
 
@@ -41,7 +43,7 @@ def parseAgeGroups(groupsFile):
        1\\t4\\t1-4
 
     First column contains lower bound of group, second column contains upper bound of group
-    while the third column contains the label that should act as the key in the dictionary 
+    while the third column contains the name that should act as the key in the dictionary 
     containing results returned by our calculations library.
 
     Returned list is of the following format:
@@ -52,7 +54,8 @@ def parseAgeGroups(groupsFile):
 
     groupsFH = open(groupsFile)
     for line in groupsFH:
-        (lower, upper, label) = line.rstrip('\n').split('\t')
+        if line.startswith('#'): continue
+        (lower, upper, name) = line.rstrip('\n').split('\t')
         
         # Cast our variables to float if they are not 'None'
         # And None if they are 'None'
@@ -68,9 +71,44 @@ def parseAgeGroups(groupsFile):
             lower = float(lower)
             upper = float(upper)
 
-        ageList.append( (lower, upper, label) )
+        ageList.append( (lower, upper, name) )
 
     return ageList
+
+def parseCopyNumberGroups(groupsFile):
+    """
+    Parses the optional list of groups that copy number data should be binned into.
+    This file should be formatted like so:
+
+        #GROUP_NAME\tLOWER\tUPPER
+        1\t0.50\t1.49
+
+    Our first column contains the name of the group, which will be the representative value for anything data
+    binned into this group. The second and third columns establish the lower and upper bounds of this group,
+    any data falling in between these two bounds should be captured into this group.        
+    """
+    copyNumGroups = []
+
+    copyNumFH = open(groupsFile)
+    for line in copyNumFH:
+        if line.startswith('#'): continue
+        (groupName, lower, upper) = line.rstrip('\n').split('\t')
+
+        if lower == 'None':
+            lower = None
+            upper = float(upper)
+        elif upper == 'None':
+            upper = None
+            lower = float(lower)
+        elif upper == 'None' and lower == 'None':
+            raise CopyNumberGroupException('Cannot have "lower" and "upper" values both set to None in a copy number group') 
+        else:
+            lower = float(lower)
+            upper = float(upper)
+
+        copyNumGroups.append( (groupName, lower, upper) )
+
+    return copyNumGroups        
 
 def parseMarkerList(markerListFile):
     """
@@ -90,7 +128,7 @@ def parseMarkerList(markerListFile):
 
     return validGenotypes
 
-def createFileIterator(inputFile):
+def createFileIterator(inputFile, cnBins):
     """
     Takes an input file and creates a generateor of said file returning
     a line in dictionary form (with headers as k-v pairs)
@@ -98,24 +136,73 @@ def createFileIterator(inputFile):
     wwarnFH = open(inputFile)
 
     # Assuming the first line is the header, very dangerous assumption     
-    wwarnHeader = wwarnFH.readline().rstrip('\n').split('\t')   
+    wwarnHeader = [k for k in wwarnFH.readline().rstrip('\n').split('\t') if len(k) != 0]   
     
     # To the genearting!
     # TODO: Fix up this ugly hack perhaps using some python tricks
     for row in wwarnFH:
+        if all(s == '\t' for s in row.rstrip('\r\n')):
+            continue
+
         rowMeta = [v for (k,v) in zip(wwarnHeader, row.rstrip('\n').split('\t')) if k in META_COL]
 
         # Now add both our marker name and genotype value to the list
         # We can do this by iterating over row elements 9 and over as these 
         # are guaranteed to be our markers
         dataElems = row.rstrip('\n').split('\t')
-
+        
         # Instead of looping over the number of elements in the dataElems list we 
         # want to loop over the header to make sure we don't try to pull in any extra
         # blank spaces at the end of the line
         for i in range(9, len(wwarnHeader)):
-            rowList = rowMeta + [ wwarnHeader[i], dataElems[i] ]
+            marker = wwarnHeader[i]
+            genotype = dataElems[i]
+
+            # We want to check to see if we are dealing with a marker of type copy number
+            # (and in the future genotype fragment) and handle these accordingly
+            if marker.find('CN') != -1 and genotype not in ['Genotyping failure', 'Not genotyped']:
+                # We are dealing with a marker of type copy number and must pre-bin this 
+                # value into one of the categories provided via command line
+                genotype = preBinCopyNumberData(genotype, cnBins)
+
+            rowList = rowMeta + [ wwarnHeader[i], genotype ]
             yield rowList
+
+def preBinCopyNumberData(copyNum, bins):
+    """
+    Based off groups provided via command-line argument copy number data will be 
+    binned into a proper group. E.x.:
+
+    CN = 1 (copy number data falls between 0.50 - 1.49)
+    CN = 2 (copy number data falls between 1.50 - 2.49)
+    """
+    binName = None
+
+    for bin in bins:
+        (name, lower, upper) = bin
+
+        if lower is None:
+            if float(copyNum) < upper:
+                binName = name
+                break
+
+        if upper is None:
+            if float(copyNum) > lower:
+                binName = name
+                break
+
+        if lower is not None and upper is not None:    
+            if lower <= float(copyNum) <= upper:
+                binName = name
+                break
+
+
+    if binName is None:
+        # If no group name is found we will just round up to the next nearest whole number.
+        # TODO: Check what proper behaviour should be here
+        binName = '%s' % ( int( round( float(copyNum) ) ) )
+
+    return binName
 
 def createOutputWWARNTables(data, genotypeList, output):
     """
@@ -155,13 +242,33 @@ def createOutputWWARNTables(data, genotypeList, output):
             for (site, groupsIter) in siteIter.iteritems():
                 wwarnOut.write("%s" % site)
                 
-                #pprint (groupsIter, indent=2)
                 for (group, genotypesIter) in groupsIter.iteritems():
                     wwarnOut.write("\t%s\t%s" % (group, groupsIter[group]['sample_size']))
 
                     for genotype in header:
-                        wwarnOut.write("\t%5.1f%%" % (100 * genotypesIter.get(genotype, 0)))
+                        # Hacky but we need to replace No data and Null with their correct
+                        # representations in our template.
+                        if genotype[0] == 'No data':
+                            genotype = ('Not genotyped',)
+                        elif genotype[0] == 'Null':
+                            genotype = ('Genotyping failure',)
+                                                        
+                        statistic = genotypesIter.get(genotype, 0)
+
+                        # When dealing with our mixed genotypes we must make sure to check both 
+                        # the A/B combination and the B/A combination
+                        if statistic == 0 and genotype[0].find('/') != -1:
+                            # We are dealing with a mixed genotype here and need to try both
+                            # combinations - A/B and B/A 
+                            statistic = genotypesIter.get(genotype[::-1], 0)
+
+                        if genotype[0] not in ['Not genotyped', 'Genotyping failure']:
+                            statistic = "%5.1f%%" % (100 * statistic)
+
+                        wwarnOut.write("\t%s" % (statistic))
+
                     print wwarnOut.write("\n")
+
         print wwarnOut.write("\n\n")                    
 
 def generateOutputDict(data):
@@ -204,9 +311,14 @@ def generateOutputDict(data):
                     else:                         
                         outputDict[markerKey][site][group].setdefault(genotype, {})
 
-                        # Add prevalence
-                        prevalence = genotypesIter[genotype][group]['prevalence']
-                        outputDict[markerKey][site][group][genotype] = prevalence
+                        # If our 'genotype' is Not genotyped or Genotyping failure we 
+                        # want to get the number of occurances of these instead of the prevalence
+                        if genotype[0] in ['Not genotyped', 'Genotyping failure']:
+                            genotypeCount = genotypesIter[genotype][group]['genotyped']
+                            outputDict[markerKey][site][group][genotype] = genotypeCount
+                        else:                            
+                            prevalence = genotypesIter[genotype][group]['prevalence']
+                            outputDict[markerKey][site][group][genotype] = prevalence
 
     yield outputDict
 
@@ -237,12 +349,13 @@ def main(parser):
     # Likewise if we have a marker list we want to create a list of all possible
     # genotypes
     ageGroups = parseAgeGroups(parser.age_groups)
+    copyNumGroups = parseCopyNumberGroups(parser.copy_number_groups)
     markerGenotypes = parseMarkerList(parser.marker_list)
 
     # We can invoke the calculations library by passing in an iterator that iterates over 
     # our file and returns a dictionary containing all the information we need. Alongside 
     # this a dictionary where results should be written to is also passed in
-    calculateWWARNStatistics(wwarnDataDict, createFileIterator(parser.input_file), ageGroups)
+    calculateWWARNStatistics(wwarnDataDict, createFileIterator(parser.input_file, copyNumGroups), ageGroups)
     
     pprint (wwarnDataDict, indent=2)
 

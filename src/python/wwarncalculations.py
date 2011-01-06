@@ -78,7 +78,15 @@ def parseMarkerComponents(rawMarkerStr):
         markers = [rawMarkerStr]
 
     for marker in markers:
-        (locusName, locusPos, markerType) = marker.split('_')
+        markerElems = marker.split('_')
+        
+        locusName = markerElems[0]
+        # Only marker type SNP will carry a LOCUS_POS value
+        if marker.find('CN') != -1 or marker.find('FRAG') != -1:
+            locusPos = ''
+        else:
+            locusPos = markerElems[1]
+
         markerList.extend( [locusName, locusPos] )
     
     return tuple(markerList)
@@ -115,11 +123,13 @@ def incrementGenotypeCount(dict, metaKey, markerKey, genotype, groups, age):
     genotypeAll = dict.setdefault(metaKey, {}).setdefault(markerKey, {}).setdefault(genotype, {}).setdefault('All', {}).get('genotyped', 0) 
     genotypeAll += 1
 
-    # Now do the same for the sample size
+    # Now do the same for the sample size only if our 'genotype' is not 'No data' or 'Genotyping failure' -- these
+    # two should not be counted towards the sample size.
     sampleAll = dict.setdefault(metaKey, {}).setdefault(markerKey, {}).setdefault('sample_size', {}).get('All', 0)
-    sampleAll += 1
+    if genotype[0] not in ['Not genotyped', 'Genotyping failure']:
+        sampleAll += 1
+        dict[metaKey][markerKey]['sample_size']['All'] = sampleAll
 
-    dict[metaKey][markerKey]['sample_size']['All'] = sampleAll
     dict[metaKey][markerKey][genotype]['All']['genotyped'] = genotypeAll
 
     # If our age key is not None we need to add this age group
@@ -172,7 +182,11 @@ def incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age):
                     groupKey = label
      
     if groupKey is not None: 
-        dict[metaKey][markerKey]['sample_size'][groupKey] += 1
+        # Once again, hacky but we do not want to increment the sample size for a given
+        # group if our genotype is 'Not genotyped' or 'Genotyping failure'
+        if genotype[0] not in ['Not genotyped', 'Genotyping failure']:
+            dict[metaKey][markerKey]['sample_size'][groupKey] += 1
+
         dict[metaKey][markerKey][genotype][groupKey]['genotyped'] += 1
 
 def calculatePrevalenceStatistic(data):
@@ -186,8 +200,15 @@ def calculatePrevalenceStatistic(data):
     """    
     # Need to loop over the dictionary and do our calculations
     for dataElemList in generateCountList(data):
+        # If we are working with a 'genotype' or 'Genotyping failure' or 
+        # 'No data' we want to skip prevalence calculations
+        if (dataElemList[2])[0] in ['Genotyping failure', 'Not genotyped']: continue
+        
         sampleSize = dataElemList[4]
         markerGenotyped = dataElemList[5]
+
+        print dataElemList[2]
+        print sampleSize
 
         # If our genotyped count is 0 we want to set prevalence to 0 
         # to avoid division by zero
