@@ -235,7 +235,7 @@ def createOutputWWARNTables(data, genotypeList, output):
             markerName = locusTuple[0] + locusTuple[1]
             header = genotypeList[markerName]
 
-            wwarnOut.write( "".join(locusTuple) + "\n" )
+            wwarnOut.write( " ".join(locusTuple) + "\n" )
             wwarnOut.write( "Site\tAge group\tSample size\t%s\n" % "\t".join(["%s" % e for e in header]) )
 
             # Iterate over each site and write out the corresponding sample size + prevalence values
