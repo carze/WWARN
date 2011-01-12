@@ -1,23 +1,23 @@
-pfmdr186	N,Y,N/Y,No data,Null
-pfcrt220	A,S,A/S,No data,Null
-pfdhfr59	C,R,C/R,No data,Null
-pfdhfr16	A,V,A/V,No data,Null
-pfdhfr51	N,I,N/I,No data,Null
-pfdhfr50	C,R,C/R,No data,Null
-pfdhps540	K,E,K/E,No data,Null
-pfdhfr108	S,N,S/N,No data,Null
-pfmdr11246	D,Y,D/Y,No data,Null
-pfdhfr164	I,L,I/L,No data,Null
-pfmdr11034	S,C,S/C,No data,Null
-pfmdr11042	N,D,N/D,No data,Null
-pfdhps581	A,G,A/G,No data,Null
-pfmdr1184	Y,F,Y/F,No data,Null
-pfdhps437	A,G,A/G,No data,Null
-pfdhps436	S,A,F,S/A,S/F,A/F,No data,Null
-pfcrt73	V,No data,Null
-pfcrt72	C,S,C/S,No data,Null
-pfcrt75	N,E,N/E,No data,Null
-pfcrt74	I,M,I/M,No data,Null
-pfcrt76	K,T,K/T,No data,Null
-pfdhps613	A,S,T,A/S,A/T,S/T,No data,Null
-pfmdr1	1,2,> 2,No data
+pfmdr186	N,Y,N/Y,Not genotyped,Genotyping failure
+pfcrt220	A,S,A/S,Not genotyped,Genotyping failure
+pfdhfr59	C,R,C/R,Not genotyped,Genotyping failure
+pfdhfr16	A,V,A/V,Not genotyped,Genotyping failure
+pfdhfr51	N,I,N/I,Not genotyped,Genotyping failure
+pfdhfr50	C,R,C/R,Not genotyped,Genotyping failure
+pfdhps540	K,E,K/E,Not genotyped,Genotyping failure
+pfdhfr108	S,N,S/N,Not genotyped,Genotyping failure
+pfmdr11246	D,Y,D/Y,Not genotyped,Genotyping failure
+pfdhfr164	I,L,I/L,Not genotyped,Genotyping failure
+pfmdr11034	S,C,S/C,Not genotyped,Genotyping failure
+pfmdr11042	N,D,N/D,Not genotyped,Genotyping failure
+pfdhps581	A,G,A/G,Not genotyped,Genotyping failure
+pfmdr1184	Y,F,Y/F,Not genotyped,Genotyping failure
+pfdhps437	A,G,A/G,Not genotyped,Genotyping failure
+pfdhps436	S,A,F,S/A,S/F,A/F,Not genotyped,Genotyping failure
+pfcrt73	V,Not genotyped,Genotyping failure
+pfcrt72	C,S,C/S,Not genotyped,Genotyping failure
+pfcrt75	N,E,N/E,Not genotyped,Genotyping failure
+pfcrt74	I,M,I/M,Not genotyped,Genotyping failure
+pfcrt76	K,T,K/T,Not genotyped,Genotyping failure
+pfdhps613	A,S,T,A/S,A/T,S/T,Not genotyped,Genotyping failure
+pfmdr1	1,2,> 2,Not genotyped

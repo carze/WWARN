@@ -10,6 +10,8 @@ __status__ = "Development"
 # This library performs the necessary WWARN calculations to produce both prevalence 
 # and total genotyped statistics
 
+from collections import OrderedDict
+
 def calculateWWARNStatistics(state, data, ageGroups=None):
     """
     Calculates the sample size and prevalence statistics for the data
@@ -35,6 +37,7 @@ def tabulateMarkerCounts(state, data, ageGroups):
     size and total genotyped counts for a given marker or set
     of markers
     """
+
     # Loop over each line of our input and pull out all the information we are
     # going to need to take accurate sample size and genotyped counts
     for line in data:
@@ -56,10 +59,11 @@ def tabulateMarkerCounts(state, data, ageGroups):
         # Split out our marker name + type combination and the genotype value 
         # from our last list element
         markersKey = parseMarkerComponents(line[6])
-        genotypesKey = parseGenotypeValues(line[7])
-
+        genotypesKey = parseGenotypeValues(line[7]) 
+        
         # Increment count for this marker
         incrementGenotypeCount(state, metadataKey, markersKey, genotypesKey, ageGroups, age)
+
 
 def parseMarkerComponents(rawMarkerStr):
     """
@@ -120,12 +124,12 @@ def incrementGenotypeCount(dict, metaKey, markerKey, genotype, groups, age):
     """
     # Check if our keys have already been initialized in our dictionary and if 
     # not we want to do so and return 0
-    genotypeAll = dict.setdefault(metaKey, {}).setdefault(markerKey, {}).setdefault(genotype, {}).setdefault('All', {}).get('genotyped', 0) 
+    genotypeAll = dict.setdefault(metaKey, OrderedDict()).setdefault(markerKey, OrderedDict()).setdefault(genotype, OrderedDict()).setdefault('All', OrderedDict()).get('genotyped', 0) 
     genotypeAll += 1
 
     # Now do the same for the sample size only if our 'genotype' is not 'No data' or 'Genotyping failure' -- these
     # two should not be counted towards the sample size.
-    sampleAll = dict.setdefault(metaKey, {}).setdefault(markerKey, {}).setdefault('sample_size', {}).get('All', 0)
+    sampleAll = dict.setdefault(metaKey, OrderedDict()).setdefault(markerKey, OrderedDict()).setdefault('sample_size', OrderedDict()).get('All', 0)
     if genotype[0] not in ['Not genotyped', 'Genotyping failure']:
         sampleAll += 1
         dict[metaKey][markerKey]['sample_size']['All'] = sampleAll
@@ -164,7 +168,7 @@ def incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age):
         # First initialize this level of nesting in our dictionary if it hasn't 
         # already been initialized
         dict[metaKey][markerKey]['sample_size'].setdefault(label, 0)
-        dict[metaKey][markerKey][genotype].setdefault(label, {}).setdefault('genotyped', 0)
+        dict[metaKey][markerKey][genotype].setdefault(label, OrderedDict()).setdefault('genotyped', 0)
 
         # Now increment the correct category that the patient providing this 
         # data fell under
@@ -206,9 +210,6 @@ def calculatePrevalenceStatistic(data):
         
         sampleSize = dataElemList[4]
         markerGenotyped = dataElemList[5]
-
-        print dataElemList[2]
-        print sampleSize
 
         # If our genotyped count is 0 we want to set prevalence to 0 
         # to avoid division by zero
