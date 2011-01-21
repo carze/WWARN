@@ -1,7 +1,7 @@
 #!/usr/bin/python
 
 __author__ = "Cesar Arze"
-__version__ = "0.1-dev"
+__version__ = "1.0-dev"
 __maintainer__ = "Cesar Arze"
 __email__ = "carze@som.umaryland.edu"
 __status__ = "Development"
@@ -124,12 +124,16 @@ def incrementGenotypeCount(dict, metaKey, markerKey, genotype, groups, age):
     """
     # Check if our keys have already been initialized in our dictionary and if 
     # not we want to do so and return 0
-    genotypeAll = dict.setdefault(metaKey, OrderedDict()).setdefault(markerKey, OrderedDict()).setdefault(genotype, OrderedDict()).setdefault('All', OrderedDict()).get('genotyped', 0) 
+    dict.setdefault(metaKey, OrderedDict()).setdefault(markerKey, OrderedDict()).setdefault(genotype, OrderedDict()).setdefault('All', OrderedDict()).setdefault('genotyped', 0)
+    genotypeAll = dict[metaKey][markerKey][genotype]['All']['genotyped']
     genotypeAll += 1
+
+    # Initialize our sample size to 0 to avoid any errors
+    dict[metaKey][markerKey].setdefault('sample_size', OrderedDict()).setdefault('All', 0)
 
     # Now do the same for the sample size only if our 'genotype' is not 'No data' or 'Genotyping failure' -- these
     # two should not be counted towards the sample size.
-    sampleAll = dict.setdefault(metaKey, OrderedDict()).setdefault(markerKey, OrderedDict()).setdefault('sample_size', OrderedDict()).get('All', 0)
+    sampleAll = dict[metaKey][markerKey]['sample_size']['All']
     if genotype[0] not in ['Not genotyped', 'Genotyping failure']:
         sampleAll += 1
         dict[metaKey][markerKey]['sample_size']['All'] = sampleAll
