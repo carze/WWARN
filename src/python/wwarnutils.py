@@ -4,7 +4,8 @@
 # This module contains utility functions that are used across the WWARN 
 # calculation scripts
 #
-
+from collections import OrderedDict
+from pprint import pprint as pp_pprint
 from wwarnexceptions import AgeGroupException, CopyNumberGroupException
 
 def parseAgeGroups(groupsFile):
@@ -121,3 +122,21 @@ def preBinCopyNumberData(copyNum, bins):
         binName = '%s' % ( int( round( float(copyNum) ) ) )
 
     return binName
+
+
+def pprint(obj, *args, **kwrds):
+    """
+    Override the stock pprint function to work with OrderedDictionaries
+    Credit to martineau @ StackOverflow
+
+    http://stackoverflow.com/questions/4301069/any-way-to-properly-pretty-print-ordered-dictionaries-in-python
+    """
+    if not isinstance(obj, OrderedDict):
+        # use stock function
+        return pp_pprint(obj, *args, **kwrds)
+    else:
+        # very simple sample custom implementation...
+        print "{"
+        for key in obj:
+            print "    %r:%r" % (key, obj[key])
+        print "}"

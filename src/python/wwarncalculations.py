@@ -10,8 +10,6 @@ __status__ = "Development"
 # This library performs the necessary WWARN calculations to produce both prevalence 
 # and total genotyped statistics
 
-from collections import OrderedDict
-
 def calculateWWARNStatistics(state, data, ageGroups=None):
     """
     Calculates the sample size and prevalence statistics for the data
@@ -91,7 +89,7 @@ def parseMarkerComponents(rawMarkerStr):
         else:
             locusPos = markerElems[1]
 
-        markerList.extend( [locusName, locusPos] )
+        markerList.append( (locusName, locusPos) )
     
     return tuple(markerList)
 
@@ -124,19 +122,33 @@ def incrementGenotypeCount(dict, metaKey, markerKey, genotype, groups, age):
     """
     # Check if our keys have already been initialized in our dictionary and if 
     # not we want to do so and return 0
-    dict.setdefault(metaKey, OrderedDict()).setdefault(markerKey, OrderedDict()).setdefault(genotype, OrderedDict()).setdefault('All', OrderedDict()).setdefault('genotyped', 0)
+    dict.setdefault(metaKey, {}).setdefault(markerKey, {}).setdefault(genotype, {}).setdefault('All', {}).setdefault('genotyped', 0)
     genotypeAll = dict[metaKey][markerKey][genotype]['All']['genotyped']
     genotypeAll += 1
 
     # Initialize our sample size to 0 to avoid any errors
-    dict[metaKey][markerKey].setdefault('sample_size', OrderedDict()).setdefault('All', 0)
+    dict[metaKey][markerKey].setdefault('sample_size', {}).setdefault('All', 0)
 
-    # Now do the same for the sample size only if our 'genotype' is not 'No data' or 'Genotyping failure' -- these
-    # two should not be counted towards the sample size.
-    sampleAll = dict[metaKey][markerKey]['sample_size']['All']
-    if genotype[0] not in ['Not genotyped', 'Genotyping failure']:
-        sampleAll += 1
-        dict[metaKey][markerKey]['sample_size']['All'] = sampleAll
+    # Our combination markers should always be appended to the end of our single marker 
+    # data so we are able to calculate the combination marker sample size information without worrying
+    if len(markerKey) == 1:
+        # Now do the same for the sample size only if our 'genotype' is not 'No data' or 'Genotyping failure' -- these
+        # two should not be counted towards the sample size.
+        sampleAll = dict[metaKey][markerKey]['sample_size']['All']
+        if genotype[0] not in ['Not genotyped', 'Genotyping failure']:
+            sampleAll += 1
+            dict[metaKey][markerKey]['sample_size']['All'] = sampleAll
+    else:
+        # Combination markers need to be handled in a different way. E.x. dhps double
+        #   
+        #       pfdhps 437 G + pfdhps 540 E = dhps double Pure
+        #       
+        # Our sample size here would be the sample size of pfdhps 437 + pfdhps 540
+        sampleSizeCombo = 0
+        for marker in markerKey:
+            sampleSizeCombo += dict[metaKey][(marker,)]['sample_size']['All']                  
+        
+        dict[metaKey][markerKey]['sample_size']['All'] = sampleSizeCombo
 
     dict[metaKey][markerKey][genotype]['All']['genotyped'] = genotypeAll
 
@@ -172,7 +184,7 @@ def incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age):
         # First initialize this level of nesting in our dictionary if it hasn't 
         # already been initialized
         dict[metaKey][markerKey]['sample_size'].setdefault(label, 0)
-        dict[metaKey][markerKey][genotype].setdefault(label, OrderedDict()).setdefault('genotyped', 0)
+        dict[metaKey][markerKey][genotype].setdefault(label, {}).setdefault('genotyped', 0)
 
         # Now increment the correct category that the patient providing this 
         # data fell under
@@ -190,11 +202,24 @@ def incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age):
                     groupKey = label
      
     if groupKey is not None: 
-        # Once again, hacky but we do not want to increment the sample size for a given
-        # group if our genotype is 'Not genotyped' or 'Genotyping failure'
-        if genotype[0] not in ['Not genotyped', 'Genotyping failure']:
-            dict[metaKey][markerKey]['sample_size'][groupKey] += 1
-
+        # Our combination markers should always be appended to the end of our single marker 
+        # data so we are able to calculate the combination marker sample size information without worrying
+        # I LOVE DUPLICATE CODE!        
+        if len(markerKey) == 1:
+            # Once again, hacky but we do not want to increment the sample size for a given
+            # group if our genotype is 'Not genotyped' or 'Genotyping failure'
+            if genotype[0] not in ['Not genotyped', 'Genotyping failure']:
+                dict[metaKey][markerKey]['sample_size'][groupKey] += 1
+        else:
+            # Combination markers need to be handled in a different way. E.x. dhps double
+            #   
+            #       pfdhps 437 G + pfdhps 540 E = dhps double Pure
+            #       
+            # Our sample size here would be the sample size of pfdhps 437 + pfdhps 540
+            sampleAll = 0
+            for marker in markerKey:
+                sampleAll += dict[metaKey][(marker,)]['sample_size'][groupKey]
+                
         dict[metaKey][markerKey][genotype][groupKey]['genotyped'] += 1
 
 def calculatePrevalenceStatistic(data):

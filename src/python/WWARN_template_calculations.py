@@ -274,7 +274,7 @@ def generateOutputDict(data):
           <SITE>: {
               <GROUP>: { [SAMPLE_SIZE, PREVALENCE VALUES.... ]
     """
-    outputDict = OrderedDict()
+    outputDict = {}
     prevSite = None
 
     for (metadataKey, locusIter) in data.iteritems():
@@ -282,13 +282,13 @@ def generateOutputDict(data):
         site = metadataKey[2]
         if prevSite is not None and site != prevSite:
             yield outputDict
-            outputDict = OrderedDict()
+            outputDict = {}
             prevSite = site
         
         # We also need a list of of our sorted genotypes that will be used
         # to generate our table header
         for (markerKey, genotypesIter) in locusIter.iteritems():
-            outputDict.setdefault(markerKey, OrderedDict()).setdefault(site, OrderedDict())
+            outputDict.setdefault(markerKey, {}).setdefault(site, {})
         
             
 
@@ -298,13 +298,13 @@ def generateOutputDict(data):
                 sortedGroups = sorted( genotypesIter[genotype].keys() )
                
                 for group in sortedGroups:
-                    outputDict[markerKey][site].setdefault(group, OrderedDict())
+                    outputDict[markerKey][site].setdefault(group, {})
 
                     if genotype == 'sample_size':
                         sampleSize = locusIter[markerKey]['sample_size'][group]
                         outputDict[markerKey][site][group]['sample_size'] = sampleSize
                     else:                         
-                        outputDict[markerKey][site][group].setdefault(genotype, OrderedDict())
+                        outputDict[markerKey][site][group].setdefault(genotype, {})
 
                         # If our 'genotype' is Not genotyped or Genotyping failure we 
                         # want to get the number of occurances of these instead of the prevalence
@@ -338,7 +338,7 @@ def parseHeaderList(headerList):
 
 def main(parser):
     # Our state variable
-    wwarnDataDict = OrderedDict()
+    wwarnDataDict = {}
     
     # If the age groups parameter is used we want to parse it.
     # Likewise if we have a marker list we want to create a list of all possible
