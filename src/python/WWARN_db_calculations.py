@@ -9,6 +9,7 @@
 import MySQLdb
 import argparse
 import ConfigParser
+import profile
 
 from collections import OrderedDict
 from itertools import chain
@@ -113,12 +114,12 @@ def createMysqlIterator(config, queryParams, cnBins, comboList):
     rows = dbCursor.fetchall()
 
     ## Now execute all our stored procedure calls
-    #comboRows = getCombinationMarkerData(dbConn, queryList[2], comboList)
-    #dbCursor.close()
+    comboRows = getCombinationMarkerData(dbConn, queryList[2], comboList)
+    dbCursor.close()
     
     # Merge our two sets of results
     # We probably want to find a better way to do this rather than storing everything in memory
-    #rows = rows[1:] + comboRows
+    rows = rows[1:] + comboRows
 
     # Process the rows 
     for row in rows:
@@ -281,6 +282,6 @@ def main(parser):
     #writeStatisticsToFile(generateGroupedStatistics(wwarnCalcDict, markerMap), parser.output_directory)
 
 if __name__ == "__main__":
-    main(buildArgParser())
+    profile.run( 'main(buildArgParser())' )
 
 

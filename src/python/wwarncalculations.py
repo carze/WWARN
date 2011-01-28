@@ -61,8 +61,7 @@ def tabulateMarkerCounts(state, data, ageGroups):
         
         # Increment count for this marker
         incrementGenotypeCount(state, metadataKey, markersKey, genotypesKey, ageGroups, age)
-
-
+    
 def parseMarkerComponents(rawMarkerStr):
     """
     Parses the raw marker string passed in as input to the calculations library
@@ -129,32 +128,30 @@ def incrementGenotypeCount(dict, metaKey, markerKey, genotype, groups, age):
     # Initialize our sample size to 0 to avoid any errors
     dict[metaKey][markerKey].setdefault('sample_size', {}).setdefault('All', 0)
 
-    # Our combination markers should always be appended to the end of our single marker 
-    # data so we are able to calculate the combination marker sample size information without worrying
-    if len(markerKey) == 1:
-        # Now do the same for the sample size only if our 'genotype' is not 'No data' or 'Genotyping failure' -- these
-        # two should not be counted towards the sample size.
-        sampleAll = dict[metaKey][markerKey]['sample_size']['All']
-        if genotype[0] not in ['Not genotyped', 'Genotyping failure']:
-            sampleAll += 1
-            dict[metaKey][markerKey]['sample_size']['All'] = sampleAll
-    else:
-        # Combination markers need to be handled in a different way. E.x. dhps double
-        #   
-        #       pfdhps 437 G + pfdhps 540 E = dhps double Pure
-        #       
-        # Our sample size here would be the sample size of pfdhps 437 + pfdhps 540
-        sampleSizeCombo = 0
-        for marker in markerKey:
-            sampleSizeCombo += dict[metaKey][(marker,)]['sample_size']['All']                  
-        
-        dict[metaKey][markerKey]['sample_size']['All'] = sampleSizeCombo
+    sampleAll = dict[metaKey][markerKey]['sample_size']['All']
+    if validateGenotypes(genotype):
+        sampleAll += 1
+        dict[metaKey][markerKey]['sample_size']['All'] = sampleAll
 
     dict[metaKey][markerKey][genotype]['All']['genotyped'] = genotypeAll
 
     # If our age key is not None we need to add this age group
     if groups:
         incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age)
+
+def validateGenotypes(genotypes, invalidGenotypes=['Not genotyped', 'Genotyping failure']):
+    """
+    Validates our genotypes to ensure that they do not fall in one of 
+    the passed in invalid genotypes. 
+    """
+    validBool = True
+    
+    for genotype in genotypes:
+        if genotype in invalidGenotypes:
+            validBool = False            
+            break
+
+    return validBool
 
 def incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age):
     """
@@ -202,23 +199,10 @@ def incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age):
                     groupKey = label
      
     if groupKey is not None: 
-        # Our combination markers should always be appended to the end of our single marker 
-        # data so we are able to calculate the combination marker sample size information without worrying
-        # I LOVE DUPLICATE CODE!        
-        if len(markerKey) == 1:
-            # Once again, hacky but we do not want to increment the sample size for a given
-            # group if our genotype is 'Not genotyped' or 'Genotyping failure'
-            if genotype[0] not in ['Not genotyped', 'Genotyping failure']:
-                dict[metaKey][markerKey]['sample_size'][groupKey] += 1
-        else:
-            # Combination markers need to be handled in a different way. E.x. dhps double
-            #   
-            #       pfdhps 437 G + pfdhps 540 E = dhps double Pure
-            #       
-            # Our sample size here would be the sample size of pfdhps 437 + pfdhps 540
-            sampleAll = 0
-            for marker in markerKey:
-                sampleAll += dict[metaKey][(marker,)]['sample_size'][groupKey]
+        # Once again, hacky but we do not want to increment the sample size for a given
+        # group if our genotype is 'Not genotyped' or 'Genotyping failure'
+        if validateGenotypes(genotype): 
+            dict[metaKey][markerKey]['sample_size'][groupKey] += 1
                 
         dict[metaKey][markerKey][genotype][groupKey]['genotyped'] += 1
 
@@ -256,6 +240,8 @@ def generateCountList(data):
 
     [ (STUDY_LABEL, COUNTRY, SITE, INVESTIGATOR, PATIENT_ID), (LOCUS_NAME, LOCUS_POS), SAMPLE_SIZE, MARKER_VALUE, COUNT)
     """     
+    sampleSize = 0
+
     for outerTupleKey in data:
         for locusTuple in data[outerTupleKey]:
             for genotype in [x for x in data[outerTupleKey][locusTuple] if x != "sample_size"]:
@@ -263,4 +249,5 @@ def generateCountList(data):
                     sampleSize = data[outerTupleKey][locusTuple]['sample_size'][group]
                     genotypedCount = data[outerTupleKey][locusTuple][genotype][group]['genotyped']
                     dataPrevList = [outerTupleKey, locusTuple, genotype, group, sampleSize, genotypedCount]
+
                     yield dataPrevList
