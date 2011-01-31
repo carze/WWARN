@@ -6,6 +6,8 @@ __maintainer__ = "Cesar Arze"
 __email__ = "carze@som.umaryland.edu"
 __status__ = "Development"
 
+import timeit
+
 ##
 # This library performs the necessary WWARN calculations to produce both prevalence 
 # and total genotyped statistics

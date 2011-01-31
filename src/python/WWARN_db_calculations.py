@@ -9,7 +9,6 @@
 import MySQLdb
 import argparse
 import ConfigParser
-import profile
 
 from collections import OrderedDict
 from itertools import chain
@@ -79,9 +78,22 @@ def parseMarkerList(markerList):
         pos = commaDelimToTuple(posRaw)
         genotype = commaDelimToTuple(genotypeRaw)            
 
-        markerLookup.setdefault( (name, pos, type, genotype), {} )
-        markerLookup[(name, pos, type, genotype)]['category'] = category
-        markerLookup[(name, pos, type, genotype)]['label'] = label
+        # Our marker tuple is created by zip'ing our name and pos variables
+        markerTuple = tuple(zip(name, pos))
+
+        # Set defaults for our dictionary
+        markerLookup.setdefault(markerTuple, {} )
+        markerLookup.get(markerTuple).setdefault('valid', [])
+        markerLookup.get(markerTuple).setdefault(genotype, {})
+
+        # All valid genotypes for a given marker (locus name + position) 
+        # are placed into a list that will be used when printing output
+        markerLookup.get(markerTuple).get('valid').append(genotype)        
+
+        # On a per-genotyped basis we want to store the category that this genotype
+        # will be grouped under as well as the label (i.e. Pure, Mixed).        
+        markerLookup[markerTuple][genotype]['category'] = category
+        markerLookup[markerTuple][genotype]['label'] = label
 
         if procedure:
             combinationsList.append([procedure, zip(name, pos, genotype)])
@@ -209,51 +221,77 @@ def getCombinationMarkerData(conn, params, combinations):
 
     return results       
 
-def generateGroupedStatistics(stats, map):
+def writeStatisticsToFile(stats, outDir, markerGroups, ageGroups):
     """
-    Groups together sets of statistics based off of labels found in our 
-    marker lookup i.e.:
-        pfdhps 436 C = pfdhps 436C - Pure
-        pfdhps 436 A/C = pfdhps 436C Mixed
-        pfdhps 436 S/C = pfdhps 436C Mixed 
+    Writes out caclulations to two files:
 
-    We would group together prevalence and sample size calculations for the two 'Mixed' genotypes
-    like so pfdhps 436C Mixed = pfdhps 436 A/C sample Size + pfdhps 436 S/C sample size        
+        1.) Statistics separated by STUDY - COUNTRY - SITE
+        2.) Statistics separated by STUDY - COUNTRY - SITE - AGE
     """
-    pass
-#    groupedStats = {}
-#
-#    for (metadataKey, locusIter) in stats.iteritems():
-#        for (markerKey, genotypesIter) in locusIter.iteritems():
-#            for genotype in genotypesIter:
-                ## Couple things we want to do here:
-                # 
-                #     1.) Check the locus name + locus pos + genotype against
-                #         our marker lookup table to see what category this 
-                #         may fall under (e.x. pfdhps436C)
-                #
-                #     2.) See if this marker has a label (i.e. 'Pure' or 'Mixed')
-                #     3.) Based off #1 and #2 we may have to
-#                locusName = markerKey[0]
-#                locusPos = markerKey[1]
-                
-#                category = map[(locusName, locusPos, genotype)].get('category', None)
-#                markerLabel = map[(locusName, locusPos, genotyoe]].get('label', None)
+    groupedStats = generateGroupedStatistics(stats, markerGroups, ageGroups)
 
-                # We want to skip this data if it doesn't contain a category
-#                if category is not None:
-#                    groupedStats.setdefault(category, {}).setdefault(
 
-def writeStatisticsToFile(stats, outDir):
+def generateGroupedStatistics(data, markerMap, groups):
     """
-    Writes out four files each containing statistics separated by category:
-
-        1.) Sample size
-        2.) Sample size grouped by age
-        3.) Prevalence 
-        4.) Prevalence grouped by age
+    Group our statistics by cateory and label provided in the marker
+    mapping file.
     """
-    pass
+    groupedStats = {}
+    
+    # Need to add the 'ALL' key to our groups
+    groups.append('All')
+
+    for (metadataKey, locusIter) in data.iteritems():
+        for (markerKey, genotypesIter) in locusIter.iteritems():
+            # Snatch the sample size out for this marker
+            sampleSizeDict = genotypesIter.get('sample_size')
+
+            if not markerKey in markerMap:
+                print "DEBUG: Marker %r not in map" % markerKey
+                continue
+
+            # Now grab the list of all valid genotypes to iterate over
+            # and check to see if the genotype exists in our statistics
+            validGenotypes = markerMap.get(markerKey).get('valid')
+
+            for genotype in validGenotypes:
+                genotypeStats = data[metadataKey][markerKey].get(genotype, None)
+                markerCategory = markerMap[markerKey][genotype].get('category')
+                genotypeLabel = markerMap[markerKey][genotype].get('label')
+
+                for group in groups:
+                    # Initialize our dictionary if it hasn't already been.
+                    (groupedStats.setdefault(metadataKey, {})
+                                 .setdefault(markerCategory, {})
+                                 .setdefault(genotypeLabel, {})
+                                 .setdefault(group, {})
+                                 .setdefault('genotyped', 0))
+                    (groupedStats.setdefault(metadataKey, {})
+                                 .setdefault(markerCategory, {})
+                                 .setdefault(genotypeLabel, {})
+                                 .setdefault(group, {})
+                                 .setdefault('prevalence', 0))
+
+                    # Initialize our sample size (if it already hasn't been)
+                    (groupedStats[metadataKey][markerCategory]
+                                 .setdefault('sample_size', sampleSizeDict))
+                                 
+                    # Grab the genotyped and prevalence for this genotype and 
+                    # add to the value currently there. If statistics do not exist
+                    # for this genotype do nothing.
+                    if genotypeStats:
+                        groupStats = genotypeStats.get(group, None)
+                        genotypedCount = groupStats.get('genotyped', 0)
+                        prevalence = groupStats.get('prevalence', 0)
+
+                        if markerCategory == 'dhfr triple':
+                            print markerKey , " - ", genotype
+                            print "%s %s -- %f" % (markerCategory, genotypeLabel, prevalence)
+
+                        groupedStats[metadataKey][markerCategory][genotypeLabel][group]['genotyped'] += genotypedCount
+                        groupedStats[metadataKey][markerCategory][genotypeLabel][group]['prevalence'] += prevalence
+
+    return groupedStats                        
 
 def main(parser):
     wwarnCalcDict = {}
@@ -279,9 +317,8 @@ def main(parser):
     calculateWWARNStatistics(wwarnCalcDict, dataIter, ageGroups)
 
     # Finally print our output to files
-    #writeStatisticsToFile(generateGroupedStatistics(wwarnCalcDict, markerMap), parser.output_directory)
+    writeStatisticsToFile(wwarnCalcDict, parser.output_directory, markerGroups, [t[2] for t in ageGroups])
 
 if __name__ == "__main__":
-    profile.run( 'main(buildArgParser())' )
-
+    main(buildArgParser())
 

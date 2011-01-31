@@ -1,0 +1,61 @@
+#LOCUS NAME	LOCUS POSITION	MARKER TYPE	GENOTYPE	CATEGORY	LABEL	PROCEDURE
+pfcrt	76	SNP	K	pfcrt 76T	Pure	
+pfcrt	76	SNP	K/T	pfcrt 76T	Mixed	
+pfcrt	220	SNP	S	pfcrt 220S	Pure	
+pfcrt	220	SNP	A/S	pfcrt 220S	Mixed	
+pfdhfr	16	SNP	V	pfdhfr 16V	Pure	
+pfdhfr	16	SNP	A/V	pfdhfr 16V	Mixed	
+pfdhfr	50	SNP	R	pfdhfr 50R	Pure	
+pfdhfr	50	SNP	C/R	pfdhfr 50R	Mixed	
+pfdhfr	51	SNP	I	pfdhfr 51I	Pure	
+pfdhfr	51	SNP	N/I	pfdhfr 51I	Mixed	
+pfdhfr	59	SNP	R	pfdhfr 59R	Pure	
+pfdhfr	59	SNP	C/R	pfdhfr 59R	Mixed	
+pfdhfr	108	SNP	N	pfdhfr 108N	Pure	
+pfdhfr	108	SNP	S/N	pfdhfr 108N	Mixed	
+pfdhfr	164	SNP	L	pfdhfr 164L	Pure	
+pfdhfr	164	SNP	I/L	pfdhfr 164L	Mixed	
+pfdhps	436	SNP	C	pfdhps 436C	Pure	
+pfdhps	436	SNP	S/C	pfdhps 436C	Mixed	
+pfdhps	436	SNP	A/C	pfdhps 436C	Mixed	
+pfdhps	436	SNP	F	pfdhps 436F	Pure	
+pfdhps	436	SNP	S/F	pfdhps 436F	Mixed	
+pfdhps	436	SNP	A/F	pfdhps 436F	Mixed	
+pfdhps	436	SNP	C/F	pfdhps 436C/F	Pure	
+pfdhps	437	SNP	G	pfdhps 437G	Pure	
+pfdhps	437	SNP	A/G	pfdhps 437G	Mixed	
+pfdhps	540	SNP	E	pfdhps 540E	Pure	
+pfdhps	540	SNP	K/E	pfdhps 540E	Mixed	
+pfdhps	581	SNP	G	pfdhps 581G	Pure	
+pfdhps	581	SNP	A/G	pfdhps 581G	Mixed	
+pfmdr1	86	SNP	Y	pfmdr1 86Y	Pure	
+pfmdr1	86	SNP	N/Y	pfmdr1 86Y	Mixed	
+pfmdr1	184	SNP	F	pfmdr1 184F	Pure	
+pfmdr1	184	SNP	Y/F	pfmdr1 184F	Mixed	
+pfmdr1	1034	SNP	C	pfmdr1 1034C	Pure	
+pfmdr1	1034	SNP	S/C	pfmdr1 1034C	Mixed	
+pfmdr1	1042	SNP	D	pfmdr1 1042D	Pure	
+pfmdr1	1042	SNP	N/D	pfmdr1 1042D	Mixed	
+pfmdr1	1246	SNP	Y	pfmdr1 1246Y	Pure	
+pfmdr1	1246	SNP	D/Y	pfmdr1 1246Y	Mixed	
+pfdhps	613	SNP	S	pfdhps 613S	Pure	
+pfdhps	613	SNP	A/S	pfdhps 613S	Mixed	
+pfdhps	613	SNP	T	pfdhps 613T	Pure	
+pfdhps	613	SNP	A/T	pfdhps 613T	Mixed	
+pfdhps	613	SNP	S/T	pfdhps 613S/T	Pure	
+pfmdr1		CN	1	pfmdr1 CN	pfmdr1 CN=1	
+pfmdr1		CN	2	pfmdr1 CN	pfmdr1 CN=2	
+pfmdr1		CN	> 2	pfmdr1 CN	pfmdr1 CN>2	
+pfdhps,pfdhps	437,540	SNP	G,E	dhps double	Pure	double_haplotype_genotype_counts
+pfdhps,pfdhps	437,540	SNP	G,K/E	dhps double	Mixed	double_haplotype_genotype_counts
+pfdhps,pfdhps	437,540	SNP	E,A/G	dhps double	Mixed	double_haplotype_genotype_counts
+pfdhfr,pfdhfr,pfdhfr	108,51,59	SNP	N,I,R	dhfr triple	Pure	triple_haplotype_genotype_counts
+pfdhfr,pfdhfr,pfdhfr	108,51,59	SNP	S/N,I,R	dhfr triple	Mixed	triple_haplotype_genotype_counts
+pfdhfr,pfdhfr,pfdhfr	108,51,59	SNP	N,I,C/R	dhfr triple	Mixed	triple_haplotype_genotype_counts
+pfdhfr,pfdhfr,pfdhfr	108,51,59	SNP	N,N/I,R	dhfr triple	Mixed	triple_haplotype_genotype_counts
+pfdhfr,pfdhfr,pfdhfr,pfdhps,pfdhps	108,51,59,437,540	SNP	N,I,R,G,E	dhfr/dhps quintuple	Pure	quintuple_haplotype_genotype_counts
+pfdhfr,pfdhfr,pfdhfr,pfdhps,pfdhps	108,51,59,437,540	SNP	N,I,C/R,G,E	dhfr/dhps quintuple	Mixed	quintuple_haplotype_genotype_counts
+pfdhfr,pfdhfr,pfdhfr,pfdhps,pfdhps	108,51,59,437,540	SNP	N,I,R,A/G,E	dhfr/dhps quintuple	Mixed	quintuple_haplotype_genotype_counts
+pfdhfr,pfdhfr,pfdhfr,pfdhps,pfdhps	108,51,59,437,540	SNP	S/N,I,R,G,E	dhfr/dhps quintuple	Mixed	quintuple_haplotype_genotype_counts
+pfdhfr,pfdhfr,pfdhfr,pfdhps,pfdhps	108,51,59,437,540	SNP	N,N/I,R,G,E	dhfr/dhps quintuple	Mixed	quintuple_haplotype_genotype_counts
+pfdhfr,pfdhfr,pfdhfr,pfdhps,pfdhps	108,51,59,437,540	SNP	N,I,R,G,K/E	dhfr/dhps quintuple	Mixed	quintuple_haplotype_genotype_counts
