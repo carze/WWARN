@@ -11,6 +11,7 @@ import argparse
 import ConfigParser
 
 from collections import OrderedDict
+from os.path import join
 from itertools import chain
 from wwarncalculations import calculateWWARNStatistics
 from wwarnutils import parseAgeGroups, parseCopyNumberGroups, preBinCopyNumberData
@@ -36,6 +37,7 @@ def buildArgParser():
                         + "statement emulating the behavior of our future CGI script")
     parser.add_argument("-o", "--output_directory", required=True, help="Desired output directory to write"
                         + " all calculations to.")
+    parser.add_argument("-p", "--output_prefix", required=True, help="Desired output file prefix.")
  
     args = parser.parse_args()
     return args
@@ -221,15 +223,47 @@ def getCombinationMarkerData(conn, params, combinations):
 
     return results       
 
-def writeStatisticsToFile(stats, outDir, markerGroups, ageGroups):
+def write_statistics_to_file(stats, outFile, groups):
     """
-    Writes out caclulations to two files:
-
-        1.) Statistics separated by STUDY - COUNTRY - SITE
-        2.) Statistics separated by STUDY - COUNTRY - SITE - AGE
+    Writes out a subset of our calculation data using the 
+    groups list passed in
     """
-    groupedStats = generateGroupedStatistics(stats, markerGroups, ageGroups)
+    calcsFH = open(outFile, 'w')
 
+    # Write our header to file
+    header = ['STUDY_ID', 'STUDY_LABEL', 'COUNTRY', 'SITE', 'INVESTIGATOR',
+               'GROUP', 'MARKER', 'GENOTYPE', 'SAMPLE SIZE', 'PREVALENCE',
+               'PREVALENCE RAW', 'GENOTYPED']
+    calcsFH.write("\t".join(header))
+    calcsFH.write("\n")
+   
+    # Now iterate over our statistics dictionary and print out the data we 
+    # need    
+    for (metadata, locusIter) in stats.iteritems():
+        for (marker, genotypesIter) in locusIter.iteritems():
+            # Need to pop this key/value off our dictionary so we 
+            # can loop over only actual genotypes
+            sampleSizeDict = genotypesIter.pop('sample_size')
+            
+            for genotype in genotypesIter:
+                for group in groups:
+                    sampleSize = str(sampleSizeDict.get(group))
+                    prevalenceRaw = genotypesIter[genotype][group]['prevalence']
+                    prevalence = "{0:.0%}".format(prevalenceRaw)
+                    genotyped = str(genotypesIter[genotype][group]['genotyped'])
+
+                    rowList = []
+                    rowList.append("")
+                    rowList.extend(list(metadata))
+                    rowList.append(group)
+                    rowList.append(marker)
+                    rowList.append(genotype)
+                    rowList.extend([sampleSize, prevalence, str(prevalenceRaw), genotyped])
+
+                    calcsFH.write("\t".join(rowList))
+                    calcsFH.write("\n")
+
+    calcsFH.close()
 
 def generateGroupedStatistics(data, markerMap, groups):
     """
@@ -238,7 +272,7 @@ def generateGroupedStatistics(data, markerMap, groups):
     """
     groupedStats = {}
     
-    # Need to add the 'ALL' key to our groups
+    # Need to add the 'ALL' key to our groups (which right now consi
     groups.append('All')
 
     for (metadataKey, locusIter) in data.iteritems():
@@ -284,10 +318,6 @@ def generateGroupedStatistics(data, markerMap, groups):
                         genotypedCount = groupStats.get('genotyped', 0)
                         prevalence = groupStats.get('prevalence', 0)
 
-                        if markerCategory == 'dhfr triple':
-                            print markerKey , " - ", genotype
-                            print "%s %s -- %f" % (markerCategory, genotypeLabel, prevalence)
-
                         groupedStats[metadataKey][markerCategory][genotypeLabel][group]['genotyped'] += genotypedCount
                         groupedStats[metadataKey][markerCategory][genotypeLabel][group]['prevalence'] += prevalence
 
@@ -316,8 +346,19 @@ def main(parser):
     dataIter = createMysqlIterator(config, parser.query_params, copyNumberGroups, markerCombos)
     calculateWWARNStatistics(wwarnCalcDict, dataIter, ageGroups)
 
-    # Finally print our output to files
-    writeStatisticsToFile(wwarnCalcDict, parser.output_directory, markerGroups, [t[2] for t in ageGroups])
+    # Before we can print our output we need to group all our statistics together under the 
+    # categories and labels found in our marker map
+    ageLabels = [t[2] for t in ageGroups]
+    groupedStats = generateGroupedStatistics(wwarnCalcDict, markerGroups, ageLabels)
+
+    # Our statistics need to be written to two files:
+    #       1.) Statistics not grouped by age
+    #       2.) Statistics grouped by age
+    allFile = join(parser.output_directory, parser.output_prefix + '.all.calcs')
+    ageFile = join(parser.output_directory, parser.output_prefix + 'ags.calcs')
+
+    write_statistics_to_file(groupedStats, allFile, ['All'])
+    write_statistics_to_file(groupedStats, ageFile, ageLabels)
 
 if __name__ == "__main__":
     main(buildArgParser())
