@@ -2,12 +2,12 @@ SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0;
 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0;
 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='TRADITIONAL';
 
-CREATE SCHEMA IF NOT EXISTS `WWARNv2` DEFAULT CHARACTER SET latin1 COLLATE latin1_swedish_ci ;
+CREATE SCHEMA IF NOT EXISTS `wwarn_temp` DEFAULT CHARACTER SET latin1 COLLATE latin1_swedish_ci ;
 
 -- -----------------------------------------------------
--- Table `WWARNv2`.`study`
+-- Table `wwarn_temp`.`study`
 -- -----------------------------------------------------
-CREATE  TABLE IF NOT EXISTS `WWARNv2`.`study` (
+CREATE  TABLE IF NOT EXISTS `wwarn_temp`.`study` (
   `id_study` INT UNSIGNED NOT NULL AUTO_INCREMENT ,
   `wwarn_study_id` VARCHAR(45) NULL ,
   `investigator` VARCHAR(45) NOT NULL ,
@@ -19,9 +19,9 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `WWARNv2`.`location`
+-- Table `wwarn_temp`.`location`
 -- -----------------------------------------------------
-CREATE  TABLE IF NOT EXISTS `WWARNv2`.`location` (
+CREATE  TABLE IF NOT EXISTS `wwarn_temp`.`location` (
   `id_location` INT UNSIGNED NOT NULL AUTO_INCREMENT ,
   `fk_study_id` INT UNSIGNED NOT NULL ,
   `country` VARCHAR(45) NOT NULL ,
@@ -30,16 +30,16 @@ CREATE  TABLE IF NOT EXISTS `WWARNv2`.`location` (
   INDEX `fk_study_id_loc` (`fk_study_id` ASC) ,
   CONSTRAINT `fk_study_id_loc`
     FOREIGN KEY (`fk_study_id` )
-    REFERENCES `WWARNv2`.`study` (`id_study` )
+    REFERENCES `wwarn_temp`.`study` (`id_study` )
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `WWARNv2`.`subject`
+-- Table `wwarn_temp`.`subject`
 -- -----------------------------------------------------
-CREATE  TABLE IF NOT EXISTS `WWARNv2`.`subject` (
+CREATE  TABLE IF NOT EXISTS `wwarn_temp`.`subject` (
   `id_subject` INT UNSIGNED NOT NULL AUTO_INCREMENT ,
   `fk_study_id` INT UNSIGNED NOT NULL ,
   `fk_location_id` INT UNSIGNED NOT NULL ,
@@ -51,21 +51,21 @@ CREATE  TABLE IF NOT EXISTS `WWARNv2`.`subject` (
   INDEX `fk_location_id_location` (`fk_location_id` ASC) ,
   CONSTRAINT `fk_study_id_study`
     FOREIGN KEY (`fk_study_id` )
-    REFERENCES `WWARNv2`.`study` (`id_study` )
+    REFERENCES `wwarn_temp`.`study` (`id_study` )
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_location_id_location`
     FOREIGN KEY (`fk_location_id` )
-    REFERENCES `WWARNv2`.`location` (`id_location` )
+    REFERENCES `wwarn_temp`.`location` (`id_location` )
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `WWARNv2`.`sample`
+-- Table `wwarn_temp`.`sample`
 -- -----------------------------------------------------
-CREATE  TABLE IF NOT EXISTS `WWARNv2`.`sample` (
+CREATE  TABLE IF NOT EXISTS `wwarn_temp`.`sample` (
   `id_sample` INT UNSIGNED NOT NULL AUTO_INCREMENT ,
   `fk_subject_id` INT UNSIGNED NOT NULL ,
   `collection_date` DATE NULL DEFAULT NULL ,
@@ -73,16 +73,16 @@ CREATE  TABLE IF NOT EXISTS `WWARNv2`.`sample` (
   INDEX `fk_subject_id` (`fk_subject_id` ASC) ,
   CONSTRAINT `fk_subject_id`
     FOREIGN KEY (`fk_subject_id` )
-    REFERENCES `WWARNv2`.`subject` (`id_subject` )
+    REFERENCES `wwarn_temp`.`subject` (`id_subject` )
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `WWARNv2`.`marker`
+-- Table `wwarn_temp`.`marker`
 -- -----------------------------------------------------
-CREATE  TABLE IF NOT EXISTS `WWARNv2`.`marker` (
+CREATE  TABLE IF NOT EXISTS `wwarn_temp`.`marker` (
   `id_marker` INT UNSIGNED NOT NULL AUTO_INCREMENT ,
   `locus_name` VARCHAR(45) NOT NULL ,
   `locus_position` INT NOT NULL ,
@@ -92,9 +92,9 @@ ENGINE = InnoDB;
 
 
 -- -----------------------------------------------------
--- Table `WWARNv2`.`genotype`
+-- Table `wwarn_temp`.`genotype`
 -- -----------------------------------------------------
-CREATE  TABLE IF NOT EXISTS `WWARNv2`.`genotype` (
+CREATE  TABLE IF NOT EXISTS `wwarn_temp`.`genotype` (
   `id_genotype` INT UNSIGNED NOT NULL AUTO_INCREMENT ,
   `fk_sample_id` INT UNSIGNED NOT NULL ,
   `fk_marker_id` INT UNSIGNED NOT NULL ,
@@ -106,12 +106,12 @@ CREATE  TABLE IF NOT EXISTS `WWARNv2`.`genotype` (
   INDEX `fk_marker_id` (`fk_marker_id` ASC) ,
   CONSTRAINT `fk_sample_id`
     FOREIGN KEY (`fk_sample_id` )
-    REFERENCES `WWARNv2`.`sample` (`id_sample` )
+    REFERENCES `wwarn_temp`.`sample` (`id_sample` )
     ON DELETE NO ACTION
     ON UPDATE NO ACTION,
   CONSTRAINT `fk_marker_id`
     FOREIGN KEY (`fk_marker_id` )
-    REFERENCES `WWARNv2`.`marker` (`id_marker` )
+    REFERENCES `wwarn_temp`.`marker` (`id_marker` )
     ON DELETE NO ACTION
     ON UPDATE NO ACTION)
 ENGINE = InnoDB;

@@ -16,6 +16,17 @@ from itertools import chain
 from wwarncalculations import calculateWWARNStatistics
 from wwarnutils import parseAgeGroups, parseCopyNumberGroups, preBinCopyNumberData
 
+import time
+
+def print_timing(func):
+    def wrapper(*arg):
+        t1 = time.time()
+        res = func(*arg)
+        t2 = time.time()
+        print '%s took %0.3f ms' % (func.func_name, (t2-t1)*1000.0)
+        return res
+    return wrapper
+
 def buildArgParser():
     """
     Builds an argparse object used to parse any command-line arguments passed
@@ -66,7 +77,7 @@ def parseMarkerList(markerList):
         [ 'locus name1', 'locus position1', 'genotype1 .... ]
     """
     markerLookup = {}
-    combinationsList = []        
+    combinationsList = {}
 
     markerListFH = open(markerList)
     for line in markerListFH:
@@ -97,8 +108,12 @@ def parseMarkerList(markerList):
         markerLookup[markerTuple][genotype]['category'] = category
         markerLookup[markerTuple][genotype]['label'] = label
 
-        if procedure:
-            combinationsList.append([procedure, zip(name, pos, genotype)])
+        # In order to adequately deal with combination markers we 
+        # need to create a separate data structure to contain 
+        # the stored procedure call we will use as well as the
+        # arguments that should be passed to the procedure.
+        if procedure and procedure not in combinationsList:
+            combinationsList[procedure] = zip(name, pos)
 
     markerListFH.close()
     return (markerLookup, combinationsList)
@@ -133,7 +148,7 @@ def createMysqlIterator(config, queryParams, cnBins, comboList):
     
     # Merge our two sets of results
     # We probably want to find a better way to do this rather than storing everything in memory
-    rows = rows[1:] + comboRows
+    rows = rows[0:] + comboRows
 
     # Process the rows 
     for row in rows:
@@ -188,6 +203,7 @@ def openDBConnection(config):
     dbConn = MySQLdb.connect(host=hostname, user=username, passwd=password, db=dbName)
     return dbConn
 
+@print_timing
 def getCombinationMarkerData(conn, params, combinations):
     """
     Takes a list of combinations and the stored procedure name
@@ -203,12 +219,11 @@ def getCombinationMarkerData(conn, params, combinations):
     # statement we are going to want to replace our WHERE with an AND.        
     params = params.replace('WHERE', 'AND')
 
-    for combo in combinations:
+    for procedure in combinations:
         # Need to open a new cursor for each query, shortcoming of mysqldb
         cursor = conn.cursor()
 
-        procedure = combo[0]
-        argsList = list(chain(*combo[1]))
+        argsList = list(chain(*combinations[procedure]))
         argsList.append(params)
 
         procedureStmt = "call %s(%s)" % (procedure, ",".join(["%s"] * len(argsList)))
@@ -216,7 +231,7 @@ def getCombinationMarkerData(conn, params, combinations):
         cursor.execute(procedureStmt, (argsList))
         rows = cursor.fetchall()
         
-        results = results[1:] + rows
+        results = results[0:] + rows
 
         # Close the cursor to make sure we don't run into any errors on our next query
         cursor.close()
@@ -243,9 +258,13 @@ def write_statistics_to_file(stats, outFile, groups):
         for (marker, genotypesIter) in locusIter.iteritems():
             # Need to pop this key/value off our dictionary so we 
             # can loop over only actual genotypes
-            sampleSizeDict = genotypesIter.pop('sample_size')
+            sampleSizeDict = genotypesIter.get('sample_size')
             
             for genotype in genotypesIter:
+                # Can't pop 'sample_size' off our genotypesIter dictionary
+                # as we call this function twice
+                if genotype == "sample_size": continue
+
                 for group in groups:
                     sampleSize = str(sampleSizeDict.get(group))
                     prevalenceRaw = genotypesIter[genotype][group]['prevalence']
@@ -323,6 +342,35 @@ def generateGroupedStatistics(data, markerMap, groups):
 
     return groupedStats                        
 
+@print_timing
+def generateTotalRows(config, queryParams, cnBins, comboList):
+    """
+    Takes a configuration file containing login credentials to the WWARN DB and 
+    a set of query parameters to contruct a query to pull down data that will be 
+    used in generating our calculations. Yields a list of data for each line of results.
+
+    TODO: Work in combination marker queries 
+    """
+    # We return a list of our query parameters here because we need our where statement
+    # when firing off our stored procedures for our combination markers
+    queryList = buildQueryStatement(queryParams)
+    query = " ".join(queryList)
+
+    dbConn = openDBConnection(config)
+    dbCursor = dbConn.cursor()
+    dbCursor.execute(query)
+    rows = dbCursor.fetchall()
+
+    ## Now execute all our stored procedure calls
+    comboRows = getCombinationMarkerData(dbConn, queryList[2], comboList)
+    dbCursor.close()
+    
+    # Merge our two sets of results
+    # We probably want to find a better way to do this rather than storing everything in memory
+    rows = rows[0:] + comboRows
+
+    return rows
+
 def main(parser):
     wwarnCalcDict = {}
 
@@ -343,8 +391,10 @@ def main(parser):
     (markerGroups, markerCombos) = parseMarkerList(parser.marker_list)
 
     # Now we can move onto generating our calculations
-    dataIter = createMysqlIterator(config, parser.query_params, copyNumberGroups, markerCombos)
-    calculateWWARNStatistics(wwarnCalcDict, dataIter, ageGroups)
+    totalRows = generateTotalRows(config, parser.query_params, copyNumberGroups, markerCombos) 
+    #dataIter = createMysqlIterator(config, parser.query_params, copyNumberGroups, markerCombos)
+    #calculateWWARNStatistics(wwarnCalcDict, dataIter, ageGroups)
+    calculateWWARNStatistics(wwarnCalcDict, totalRows, ageGroups)
 
     # Before we can print our output we need to group all our statistics together under the 
     # categories and labels found in our marker map

@@ -2,9 +2,9 @@ DELIMITER //
 
 DROP PROCEDURE IF EXISTS triple_haplotype_genotype_counts//
 
-CREATE PROCEDURE triple_haplotype_genotype_counts (IN locus1_name VARCHAR(64), IN locus1_pos INT(10), IN locus1_genotype VARCHAR(64),
-                                                   IN locus2_name VARCHAR(64), IN locus2_pos INT(10), IN locus2_genotype VARCHAR(64),
-                                                   IN locus3_name VARCHAR(64), IN locus3_pos INT(10), IN locus3_genotype VARCHAR(64),
+CREATE PROCEDURE triple_haplotype_genotype_counts (IN locus1_name VARCHAR(64), IN locus1_pos INT(10),
+                                                   IN locus2_name VARCHAR(64), IN locus2_pos INT(10),
+                                                   IN locus3_name VARCHAR(64), IN locus3_pos INT(10),
                                                    IN where_clause TEXT)
 
 BEGIN
@@ -30,11 +30,11 @@ SET @from_string = CONCAT('FROM study s JOIN location l ON s.id_study = l.fk_stu
                     'JOIN genotype g3 ON g3.fk_sample_id = sp3.id_sample ' ,
                     'JOIN marker m3 ON m3.id_marker = g3.fk_marker_id ' ,
                     'WHERE m1.locus_name = "' , locus1_name , '" AND m1.locus_position = "' , locus1_pos , '" ' ,
-                    'AND g1.value = "' , locus1_genotype , '" AND m2.locus_name = "' , locus2_name , '" ' ,
-                    'AND m2.locus_position = "' , locus2_pos , '" AND g2.value = "' , locus2_genotype , '" ' ,
+                    'AND m2.locus_name = "' , locus2_name , '" AND m2.locus_position = "' , locus2_pos , '" ' ,
                     'AND m3.locus_name = "' , locus3_name , '" AND m3.locus_position = "' , locus3_pos , '" ' ,
-                    'AND g3.value = "' , locus3_genotype , '" ' , 
-                    'AND g1.value NOT IN ("No data", "Fail") AND g2.value NOT IN ("No data", "Fail") AND g3.value NOT IN ("No data", "Fail") ');
+                    'AND g1.value NOT IN ("Genotyping Failure", "Not Genotyped") ' ,
+                    'AND g2.value NOT IN ("Genotyping Failure", "Not Genotyped") ',
+                    'AND g3.value NOT IN ("Genotyping Failure", "Not Genotyped") ');
 
 SET @query = CONCAT(@select_string, @from_string, where_clause);
 

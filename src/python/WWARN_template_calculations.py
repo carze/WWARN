@@ -117,7 +117,7 @@ def parseMarkerList(markerListFile):
     a dictionary that can be used to look up all of these genotypes. This is useful
     if we want to see which genotypes were not genotyped in a set of data
     """
-    validGenotypes = {}
+    validGenotypes = OrderedDict()
 
     # Open file and grab all genotypes (comma-delimited list) to be placed
     # in our dictionary
@@ -233,10 +233,10 @@ def createOutputWWARNTables(data, genotypeList, output):
         for (locusTuple, siteIter) in outDict.iteritems():
             # Print out our header here; we need one table per marker 
             # so we will be printing the header out multiple times
-            markerName = locusTuple[0] + locusTuple[1]
+            markerName = locusTuple[0][0] + locusTuple[0][1]
             header = genotypeList[markerName]
 
-            wwarnOut.write( " ".join(locusTuple) + "\n" )
+            wwarnOut.write( " ".join(locusTuple[0]) + "\n" )
             wwarnOut.write( "Site\tAge group\tSample size\t%s\n" % "\t".join(["%s" % e for e in header]) )
 
             # Iterate over each site and write out the corresponding sample size + prevalence values
@@ -274,7 +274,7 @@ def generateOutputDict(data):
           <SITE>: {
               <GROUP>: { [SAMPLE_SIZE, PREVALENCE VALUES.... ]
     """
-    outputDict = {}
+    outputDict = OrderedDict()
     prevSite = None
 
     for (metadataKey, locusIter) in data.iteritems():
@@ -282,29 +282,27 @@ def generateOutputDict(data):
         site = metadataKey[2]
         if prevSite is not None and site != prevSite:
             yield outputDict
-            outputDict = {}
+            outputDict = OrderedDict()
             prevSite = site
         
         # We also need a list of of our sorted genotypes that will be used
         # to generate our table header
         for (markerKey, genotypesIter) in locusIter.iteritems():
-            outputDict.setdefault(markerKey, {}).setdefault(site, {})
+            outputDict.setdefault(markerKey, OrderedDict()).setdefault(site, OrderedDict())
         
-            
-
             # Now loop over all our genotypes and grab all the prevalences 
             # to go alongside our sample sizes
             for genotype in genotypesIter:
-                sortedGroups = sorted( genotypesIter[genotype].keys() )
+                sortedGroups = genotypesIter[genotype].keys()
                
                 for group in sortedGroups:
-                    outputDict[markerKey][site].setdefault(group, {})
+                    outputDict[markerKey][site].setdefault(group, OrderedDict())
 
                     if genotype == 'sample_size':
                         sampleSize = locusIter[markerKey]['sample_size'][group]
                         outputDict[markerKey][site][group]['sample_size'] = sampleSize
                     else:                         
-                        outputDict[markerKey][site][group].setdefault(genotype, {})
+                        outputDict[markerKey][site][group].setdefault(genotype, OrderedDict())
 
                         # If our 'genotype' is Not genotyped or Genotyping failure we 
                         # want to get the number of occurances of these instead of the prevalence
@@ -338,7 +336,7 @@ def parseHeaderList(headerList):
 
 def main(parser):
     # Our state variable
-    wwarnDataDict = {}
+    wwarnDataDict = OrderedDict()
     
     # If the age groups parameter is used we want to parse it.
     # Likewise if we have a marker list we want to create a list of all possible

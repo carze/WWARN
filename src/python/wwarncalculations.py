@@ -6,7 +6,7 @@ __maintainer__ = "Cesar Arze"
 __email__ = "carze@som.umaryland.edu"
 __status__ = "Development"
 
-import timeit
+from collections import OrderedDict
 
 ##
 # This library performs the necessary WWARN calculations to produce both prevalence 
@@ -134,14 +134,14 @@ def incrementGenotypeCount(dict, metaKey, markerKey, genotype, groups, age):
     if validateGenotypes(genotype):
         sampleAll += 1
         dict[metaKey][markerKey]['sample_size']['All'] = sampleAll
-
+    
     dict[metaKey][markerKey][genotype]['All']['genotyped'] = genotypeAll
 
     # If our age key is not None we need to add this age group
     if groups:
         incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age)
 
-def validateGenotypes(genotypes, invalidGenotypes=['Not genotyped', 'Genotyping failure']):
+def validateGenotypes(genotypes, invalidGenotypes=['Not Genotyped', 'Genotyping Failure']):
     """
     Validates our genotypes to ensure that they do not fall in one of 
     the passed in invalid genotypes. 
@@ -221,7 +221,7 @@ def calculatePrevalenceStatistic(data):
     for dataElemList in generateCountList(data):
         # If we are working with a 'genotype' or 'Genotyping failure' or 
         # 'No data' we want to skip prevalence calculations
-        if (dataElemList[2])[0] in ['Genotyping failure', 'Not genotyped']: continue
+        if (dataElemList[2])[0] in ['Genotyping Failure', 'Not Genotyped']: continue
         
         sampleSize = dataElemList[4]
         markerGenotyped = dataElemList[5]
