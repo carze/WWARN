@@ -3,15 +3,16 @@
 # produced by the WWARN template as input data.
 
 import argparse
+import ConfigParser
 
 from wwarncalculations import calculateWWARNStatistics
 from wwarnexceptions import AgeGroupException, CopyNumberGroupException
 from collections import OrderedDict
-from pprint import pprint
+from wwarnutils import validateGenotypes
 
 # A white list of columns that we want to capture and pass into our calculations
 # code
-META_COL = ['STUDY_LABEL', 'INVESTIGATOR', 'COUNTRY', 'SITE', 'AGE', 'PATIENT_ID']
+META_COL = ['STUDY_ID', 'STUDY_LABEL', 'INVESTIGATOR', 'COUNTRY', 'SITE', 'AGE', 'PATIENT_ID']
 
 def buildArgParser():
     """
@@ -21,12 +22,10 @@ def buildArgParser():
                                         + 'given data provided from the WWARN database')
     parser.add_argument('-i', '--input_file', required=True, help='The tab-delimited text file produced from the '
                             + 'TEMPLATE worksheet in the WWARN Template')
+    parser.add_argument('-c', '--config_file', required=True, help='A configuration file containing parameters '
+                            + 'required for execution of the calculations script.')
     parser.add_argument('-m', '--marker_list', required=False, help='A list of all possible markers that should be '
                             + 'looked at in tabulating these statistics.')
-    parser.add_argument('-a', '--age_groups', required=False, help='A comma-delimited list of optional age groups '
-                            + 'that results should also be categorized under.')
-    parser.add_argument('-c', '--copy_number_groups', required=False, help='A list of groups that copy numberd data '
-                            + 'should be binned into.')
     parser.add_argument('-o', '--output_file', required=True, help='Desired output file containing WWARN calculations.')
     args = parser.parse_args()
 
@@ -119,8 +118,6 @@ def parseMarkerList(markerListFile):
     """
     validGenotypes = OrderedDict()
 
-    # Open file and grab all genotypes (comma-delimited list) to be placed
-    # in our dictionary
     genotypeListFH = open(markerListFile)
     for line in genotypeListFH:
         (marker, genotypes) = line.rstrip('\n').split('\t')
@@ -136,20 +133,13 @@ def createFileIterator(inputFile, cnBins):
     """
     wwarnFH = open(inputFile)
 
-    # Assuming the first line is the header, very dangerous assumption     
-    wwarnHeader = [k for k in wwarnFH.readline().rstrip('\n').split('\t') if len(k) != 0]   
+    wwarnHeader = [k for k in wwarnFH.readline().replace('#', '').rstrip('\n').split('\t') if len(k) != 0]   
     
-    # To the genearting!
-    # TODO: Fix up this ugly hack perhaps using some python tricks
     for row in wwarnFH:
         if all(s == '\t' for s in row.rstrip('\r\n')):
             continue
-
+    
         rowMeta = [v for (k,v) in zip(wwarnHeader, row.rstrip('\n').split('\t')) if k in META_COL]
-
-        # Now add both our marker name and genotype value to the list
-        # We can do this by iterating over row elements 9 and over as these 
-        # are guaranteed to be our markers
         dataElems = row.rstrip('\n').split('\t')
         
         # Instead of looping over the number of elements in the dataElems list we 
@@ -159,14 +149,16 @@ def createFileIterator(inputFile, cnBins):
             marker = wwarnHeader[i]
             genotype = dataElems[i]
 
+            if len(genotype) == 0: continue
+
             # We want to check to see if we are dealing with a marker of type copy number
             # (and in the future genotype fragment) and handle these accordingly
-            if marker.find('CN') != -1 and genotype not in ['Genotyping failure', 'Not genotyped']:
+            if marker.find('CN') != -1 and validateGenotypes([genotype]):
                 # We are dealing with a marker of type copy number and must pre-bin this 
                 # value into one of the categories provided via command line
                 genotype = preBinCopyNumberData(genotype, cnBins)
 
-            rowList = rowMeta + [ wwarnHeader[i], genotype ]
+            rowList = rowMeta + [ marker, genotype ]
             yield rowList
 
 def preBinCopyNumberData(copyNum, bins):
@@ -223,27 +215,23 @@ def createOutputWWARNTables(data, genotypeList, output):
     """
     wwarnOut = open(output, 'w')
     
-    # The data structure returned from the calculations script needs to be 
-    # transformed into something that we can more easily work with to produce the 
-    # output we need
-
     # We need to grab (and sort) all the genotypes we will be dealing with
     # for this input file
     for outDict in generateOutputDict(data):
         for (locusTuple, siteIter) in outDict.iteritems():
-            # Print out our header here; we need one table per marker 
-            # so we will be printing the header out multiple times
             markerName = locusTuple[0][0] + locusTuple[0][1]
             header = genotypeList[markerName]
 
             wwarnOut.write( " ".join(locusTuple[0]) + "\n" )
             wwarnOut.write( "Site\tAge group\tSample size\t%s\n" % "\t".join(["%s" % e for e in header]) )
 
-            # Iterate over each site and write out the corresponding sample size + prevalence values
             for (site, groupsIter) in siteIter.iteritems():
                 wwarnOut.write("%s" % site)
                 
                 for (group, genotypesIter) in groupsIter.iteritems():
+                    if groupsIter[group]['sample_size'] == 0:
+                        continue
+
                     wwarnOut.write("\t%s\t%s" % (group, groupsIter[group]['sample_size']))
 
                     for genotype in header:
@@ -252,11 +240,9 @@ def createOutputWWARNTables(data, genotypeList, output):
                         # When dealing with our mixed genotypes we must make sure to check both 
                         # the A/B combination and the B/A combination
                         if statistic == 0 and genotype[0].find('/') != -1:
-                            # We are dealing with a mixed genotype here and need to try both
-                            # combinations - A/B and B/A 
                             statistic = genotypesIter.get(genotype[::-1], 0)
 
-                        if genotype[0] not in ['Not genotyped', 'Genotyping failure']:
+                        if validateGenotypes(list(genotype)):
                             statistic = "{0:.0%}".format(statistic)
 
                         wwarnOut.write("\t%s" % (statistic))
@@ -278,20 +264,15 @@ def generateOutputDict(data):
     prevSite = None
 
     for (metadataKey, locusIter) in data.iteritems():
-        # We need to pull out site from here to be used as one our keys
-        site = metadataKey[2]
+        site = metadataKey[3]
         if prevSite is not None and site != prevSite:
             yield outputDict
             outputDict = OrderedDict()
             prevSite = site
         
-        # We also need a list of of our sorted genotypes that will be used
-        # to generate our table header
         for (markerKey, genotypesIter) in locusIter.iteritems():
             outputDict.setdefault(markerKey, OrderedDict()).setdefault(site, OrderedDict())
         
-            # Now loop over all our genotypes and grab all the prevalences 
-            # to go alongside our sample sizes
             for genotype in genotypesIter:
                 sortedGroups = genotypesIter[genotype].keys()
                
@@ -306,12 +287,12 @@ def generateOutputDict(data):
 
                         # If our 'genotype' is Not genotyped or Genotyping failure we 
                         # want to get the number of occurances of these instead of the prevalence
-                        if genotype[0] in ['Not genotyped', 'Genotyping failure']:
-                            genotypeCount = genotypesIter[genotype][group]['genotyped']
-                            outputDict[markerKey][site][group][genotype] = genotypeCount
-                        else:                            
+                        if validateGenotypes(list(genotype)):
                             prevalence = genotypesIter[genotype][group]['prevalence']
                             outputDict[markerKey][site][group][genotype] = prevalence
+                        else:                            
+                            genotypeCount = genotypesIter[genotype][group]['genotyped']
+                            outputDict[markerKey][site][group][genotype] = genotypeCount
 
     yield outputDict
 
@@ -335,22 +316,15 @@ def parseHeaderList(headerList):
     return headerStrList
 
 def main(parser):
-    # Our state variable
     wwarnDataDict = OrderedDict()
-    
-    # If the age groups parameter is used we want to parse it.
-    # Likewise if we have a marker list we want to create a list of all possible
-    # genotypes
-    ageGroups = parseAgeGroups(parser.age_groups)
-    copyNumGroups = parseCopyNumberGroups(parser.copy_number_groups)
+  
+    config = ConfigParser.RawConfigParser()
+    config.read(parser.config_file)
+    ageGroups = parseAgeGroups(config.get('GENERAL', 'age_groups'))
+    copyNumGroups = parseCopyNumberGroups(config.get('GENERAL', 'copy_number_groups'))
     markerGenotypes = parseMarkerList(parser.marker_list)
 
-    # We can invoke the calculations library by passing in an iterator that iterates over 
-    # our file and returns a dictionary containing all the information we need. Alongside 
-    # this a dictionary where results should be written to is also passed in
     calculateWWARNStatistics(wwarnDataDict, createFileIterator(parser.input_file, copyNumGroups), ageGroups)
-    
-    # Finally print the statistics to the desired output file
     createOutputWWARNTables(wwarnDataDict, markerGenotypes, parser.output_file)
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@
 from collections import OrderedDict
 from pprint import pprint as pp_pprint
 from wwarnexceptions import AgeGroupException, CopyNumberGroupException
+import MySQLdb
 
 def parseAgeGroups(groupsFile):
     """
@@ -140,3 +141,28 @@ def pprint(obj, *args, **kwrds):
         for key in obj:
             print "    %r:%r" % (key, obj[key])
         print "}"
+
+def validateGenotypes(genotypes, invalidGenotypes=['not genotyped', 'genotyping failure']):
+    """
+    Validates our genotypes to ensure that they do not fall in one of 
+    the passed in invalid genotypes. 
+    """
+    validBool = True
+    
+    for genotype in genotypes:
+        try:
+            if genotype.lower() in invalidGenotypes:
+                validBool = False            
+                break
+        except AttributeError as e:
+            pass
+
+    return validBool
+
+def open_db_connection(hostname, db_name, username, password):
+    """
+    Opens a connection to the database specified by the passed in arguments
+    to this function
+    """
+    db_conn = MySQLdb.connect(host=hostname, user=username, passwd=password, db=db_name)
+    return db_conn

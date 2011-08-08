@@ -1,5 +1,5 @@
 #LOCUS NAME	LOCUS POSITION	MARKER TYPE	GENOTYPE	CATEGORY	LABEL	PROCEDURE
-pfcrt	76	SNP	K	pfcrt 76T	Pure	
+pfcrt	76	SNP	T	pfcrt 76T	Pure	
 pfcrt	76	SNP	K/T	pfcrt 76T	Mixed	
 pfcrt	220	SNP	S	pfcrt 220S	Pure	
 pfcrt	220	SNP	A/S	pfcrt 220S	Mixed	
@@ -43,12 +43,12 @@ pfdhps	613	SNP	A/S	pfdhps 613S	Mixed
 pfdhps	613	SNP	T	pfdhps 613T	Pure	
 pfdhps	613	SNP	A/T	pfdhps 613T	Mixed	
 pfdhps	613	SNP	S/T	pfdhps 613S/T	Pure	
-pfmdr1		CN	1	pfmdr1 CN	pfmdr1 CN=1	
-pfmdr1		CN	2	pfmdr1 CN	pfmdr1 CN=2	
-pfmdr1		CN	> 2	pfmdr1 CN	pfmdr1 CN>2	
+pfmdr1	0	CN	1	pfmdr1 CN	pfmdr1 CN=1	
+pfmdr1	0	CN	2	pfmdr1 CN	pfmdr1 CN=2	
+pfmdr1	0	CN	> 2	pfmdr1 CN	pfmdr1 CN>2	
 pfdhps,pfdhps	437,540	SNP	G,E	dhps double	Pure	double_haplotype_genotype_counts
 pfdhps,pfdhps	437,540	SNP	G,K/E	dhps double	Mixed	double_haplotype_genotype_counts
-pfdhps,pfdhps	437,540	SNP	E,A/G	dhps double	Mixed	double_haplotype_genotype_counts
+pfdhps,pfdhps	437,540	SNP	A/G,E	dhps double	Mixed	double_haplotype_genotype_counts
 pfdhfr,pfdhfr,pfdhfr	108,51,59	SNP	N,I,R	dhfr triple	Pure	triple_haplotype_genotype_counts
 pfdhfr,pfdhfr,pfdhfr	108,51,59	SNP	S/N,I,R	dhfr triple	Mixed	triple_haplotype_genotype_counts
 pfdhfr,pfdhfr,pfdhfr	108,51,59	SNP	N,I,C/R	dhfr triple	Mixed	triple_haplotype_genotype_counts

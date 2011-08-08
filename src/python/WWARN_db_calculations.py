@@ -16,16 +16,7 @@ from itertools import chain
 from wwarncalculations import calculateWWARNStatistics
 from wwarnutils import parseAgeGroups, parseCopyNumberGroups, preBinCopyNumberData
 
-import time
-
-def print_timing(func):
-    def wrapper(*arg):
-        t1 = time.time()
-        res = func(*arg)
-        t2 = time.time()
-        print '%s took %0.3f ms' % (func.func_name, (t2-t1)*1000.0)
-        return res
-    return wrapper
+from wwarnutils import pprint
 
 def buildArgParser():
     """
@@ -38,14 +29,12 @@ def buildArgParser():
                         + "containing database login credentials")
     parser.add_argument("-m", "--marker_list", required=True, help="A list of all possible markers "
                         + "that should be present in our output")
-    parser.add_argument("-mc" "--marker_combo_list", required=False, help="A list of the combination "
-                        + "markers that should have calculations tabulated.")
-    parser.add_argument("-a", "--age_groups", required=False, help="A comma-delimited list of optional "
-                        + "age groups that results can be categorized under")
-    parser.add_argument("-cn", "--copy_number_groups", required=False, help="A list of groups that copy "
-                        + "number data should be binned into.")
-    parser.add_argument('-q', "--query_params", required=False, help="The WHERE clause in our query "
-                        + "statement emulating the behavior of our future CGI script")
+    parser.add_argument('-s', "--study_ids", required=False, action='append', default=[], help="A specific study ID " 
+                        + "on which to query data upon and perform calculations on.")
+    parser.add_argument('-si', "--sites", required=False, action='append', default=[], help="A specific site on which " 
+                        + "to query data upon and perform calculations on.")
+    parser.add_argument("-d", "--debug", required=False, help="Turn on debug printing", action='store_const', const=True,
+                        default=False)
     parser.add_argument("-o", "--output_directory", required=True, help="Desired output directory to write"
                         + " all calculations to.")
     parser.add_argument("-p", "--output_prefix", required=True, help="Desired output file prefix.")
@@ -84,17 +73,14 @@ def parseMarkerList(markerList):
         if line.startswith('#'):
             continue
 
-        # TODO: Work in code that handles combination markers
         (nameRaw, posRaw, type, genotypeRaw, category, label, procedure) = line.rstrip('\n').split('\t')
 
         name = commaDelimToTuple(nameRaw)
         pos = commaDelimToTuple(posRaw)
         genotype = commaDelimToTuple(genotypeRaw)            
 
-        # Our marker tuple is created by zip'ing our name and pos variables
         markerTuple = tuple(zip(name, pos))
 
-        # Set defaults for our dictionary
         markerLookup.setdefault(markerTuple, {} )
         markerLookup.get(markerTuple).setdefault('valid', [])
         markerLookup.get(markerTuple).setdefault(genotype, {})
@@ -124,69 +110,82 @@ def commaDelimToTuple(str):
     """
     return tuple(str.split(','))
 
-def createMysqlIterator(config, queryParams, cnBins, comboList):
+def createMysqlIterator(config, studyIds, sites, cnBins, comboList):
     """
     Takes a configuration file containing login credentials to the WWARN DB and 
     a set of query parameters to contruct a query to pull down data that will be 
     used in generating our calculations. Yields a list of data for each line of results.
-
-    TODO: Work in combination marker queries 
     """
-    # We return a list of our query parameters here because we need our where statement
-    # when firing off our stored procedures for our combination markers
-    queryList = buildQueryStatement(queryParams)
+    queryList = buildQueryStatement(studyIds, sites)
     query = " ".join(queryList)
 
     dbConn = openDBConnection(config)
     dbCursor = dbConn.cursor()
-    dbCursor.execute(query)
+    params = studyIds + sites
+
+    dbCursor.execute(query, params)
     rows = dbCursor.fetchall()
 
-    ## Now execute all our stored procedure calls
-    comboRows = getCombinationMarkerData(dbConn, queryList[2], comboList)
+    comboRows = getCombinationMarkerData(dbConn, queryList[2], params, comboList)
     dbCursor.close()
     
-    # Merge our two sets of results
-    # We probably want to find a better way to do this rather than storing everything in memory
     rows = rows[0:] + comboRows
+    for row in list(rows):
+        marker = row[7]
+        genotype = row[8]
 
-    # Process the rows 
-    for row in rows:
-        marker = row[6]
-        genotype = row[7]
-
-        # Have to convert 'Copy Number' to 'CN' and 'Genotype Fragment' to 'FRAG'
-        marker.replace('Copy Number', 'CN')
-        marker.replace('Genotype Fragment', 'FRAG')
+        # Convert to abbreviated format to match listing in valid marker file
+        marker = marker.replace('Copy Number', 'CN')
+        marker = marker.replace('Genotype Fragment', 'FRAG')
 
         # Check to see if our marker type is copy number (and in the future 
         # genotype fragment)
-        if marker.find('CN') != -1 and genotype not in ['Genotyping failure', 'Not genotyped']:
-             genotype = preBinCopyNumberData(genotype, cnBins)
+        if marker.find('CN') != -1 and genotype not in ['Genotyping Failure', 'Not Genotyped']:
+            genotype = preBinCopyNumberData(genotype, cnBins)
+            row = row[0:7] + (marker, genotype)
 
         yield row
 
-def buildQueryStatement(params):
+def buildQueryStatement(studyIds, sites):
     """
     Builds the query statement sent off to the database.
 
     This is a placeholder function that will involve much more once this script
     is convereted to CGI
     """
-    selectStmt = "SELECT s.label, s.investigator, l.country, l.site, p.patient_id, p.age, " \
+    selectStmt = "SELECT s.wwarn_study_id, s.label, s.investigator, l.country, l.site, p.patient_id, p.age, " \
                  "CONCAT(m.locus_name, \"_\", m.locus_position, \"_\", m.type) AS \"marker\", g.value "
     fromStmt = "FROM study s JOIN location l ON s.id_study = l.fk_study_id " \
-               "JOIN subject p ON p.fk_location_id = l.id_location AND p.age IS NOT NULL " \
+               "JOIN subject p ON p.fk_location_id = l.id_location " \
                "JOIN sample sp ON sp.fk_subject_id = p.id_subject " \
                "JOIN genotype g ON g.fk_sample_id = sp.id_sample " \
                "JOIN marker m ON m.id_marker = g.fk_marker_id "
     
-    # If params was passed in we want to concat it to our query 
-    whereStmt = ""
-    if params:
-        whereStmt = "WHERE %s" % params            
+    whereStmt = "WHERE "
+    if studyIds:
+        whereStmt += buildWhereStmt('s.wwarn_study_id', studyIds)
+
+    if sites:        
+        whereStmt += buildWhereStmt('l.site', sites)
     
+    whereStmt = whereStmt.rstrip(" AND ")
+    whereStmt = whereStmt.rstrip("WHERE ")
     return [selectStmt, fromStmt, whereStmt]
+
+def buildWhereStmt(key, values):
+    """
+    Constructs the where statement portion of our query based off the key and 
+    values passed in. For each value a key = %s placeholder is generated 
+    to be replaced during the query execute.
+    """
+    where = " ("
+
+    for val in values:
+        where += key + "=%s OR "
+    
+    where = where.rstrip("OR ")
+    where += ") AND "
+    return where
 
 def openDBConnection(config):
     """
@@ -203,8 +202,7 @@ def openDBConnection(config):
     dbConn = MySQLdb.connect(host=hostname, user=username, passwd=password, db=dbName)
     return dbConn
 
-@print_timing
-def getCombinationMarkerData(conn, params, combinations):
+def getCombinationMarkerData(conn, where_stmt, params, combinations):
     """
     Takes a list of combinations and the stored procedure name
     in our WWARN db that will generate results and executes each
@@ -217,28 +215,26 @@ def getCombinationMarkerData(conn, params, combinations):
 
     # Because our parameters will be appened onto an already built SQL
     # statement we are going to want to replace our WHERE with an AND.        
-    params = params.replace('WHERE', 'AND')
+    where_stmt = where_stmt.replace('WHERE', 'AND')
+    where_stmt = where_stmt % tuple(['"%s"' % x for x in params])
 
     for procedure in combinations:
         # Need to open a new cursor for each query, shortcoming of mysqldb
         cursor = conn.cursor()
 
         argsList = list(chain(*combinations[procedure]))
-        argsList.append(params)
+        argsList.append(where_stmt)
 
         procedureStmt = "call %s(%s)" % (procedure, ",".join(["%s"] * len(argsList)))
 
         cursor.execute(procedureStmt, (argsList))
         rows = cursor.fetchall()
-        
         results = results[0:] + rows
-
-        # Close the cursor to make sure we don't run into any errors on our next query
         cursor.close()
 
     return results       
 
-def write_statistics_to_file(stats, outFile, groups):
+def write_statistics_to_file(stats, outFile, groups, debug):
     """
     Writes out a subset of our calculation data using the 
     groups list passed in
@@ -247,8 +243,11 @@ def write_statistics_to_file(stats, outFile, groups):
 
     # Write our header to file
     header = ['STUDY_ID', 'STUDY_LABEL', 'COUNTRY', 'SITE', 'INVESTIGATOR',
-               'GROUP', 'MARKER', 'GENOTYPE', 'SAMPLE SIZE', 'PREVALENCE',
-               'PREVALENCE RAW', 'GENOTYPED']
+               'GROUP', 'MARKER', 'GENOTYPE', 'SAMPLE SIZE', 'PREVALENCE']
+
+    if debug:
+        header.extend(['PREVALENCE RAW', 'GENOTYPED'])
+                       
     calcsFH.write("\t".join(header))
     calcsFH.write("\n")
    
@@ -272,12 +271,15 @@ def write_statistics_to_file(stats, outFile, groups):
                     genotyped = str(genotypesIter[genotype][group]['genotyped'])
 
                     rowList = []
-                    rowList.append("")
                     rowList.extend(list(metadata))
                     rowList.append(group)
                     rowList.append(marker)
                     rowList.append(genotype)
-                    rowList.extend([sampleSize, prevalence, str(prevalenceRaw), genotyped])
+                    rowList.append(sampleSize)
+                    rowList.append(prevalence)
+
+                    if debug:
+                        rowList.extend([str(prevalenceRaw), genotyped])
 
                     calcsFH.write("\t".join(rowList))
                     calcsFH.write("\n")
@@ -342,59 +344,17 @@ def generateGroupedStatistics(data, markerMap, groups):
 
     return groupedStats                        
 
-@print_timing
-def generateTotalRows(config, queryParams, cnBins, comboList):
-    """
-    Takes a configuration file containing login credentials to the WWARN DB and 
-    a set of query parameters to contruct a query to pull down data that will be 
-    used in generating our calculations. Yields a list of data for each line of results.
-
-    TODO: Work in combination marker queries 
-    """
-    # We return a list of our query parameters here because we need our where statement
-    # when firing off our stored procedures for our combination markers
-    queryList = buildQueryStatement(queryParams)
-    query = " ".join(queryList)
-
-    dbConn = openDBConnection(config)
-    dbCursor = dbConn.cursor()
-    dbCursor.execute(query)
-    rows = dbCursor.fetchall()
-
-    ## Now execute all our stored procedure calls
-    comboRows = getCombinationMarkerData(dbConn, queryList[2], comboList)
-    dbCursor.close()
-    
-    # Merge our two sets of results
-    # We probably want to find a better way to do this rather than storing everything in memory
-    rows = rows[0:] + comboRows
-
-    return rows
-
 def main(parser):
     wwarnCalcDict = {}
 
-    # Parse our age and copy number groups to allow us to further group 
-    # our results
-    ageGroups = parseAgeGroups(parser.age_groups)
-    copyNumberGroups = parseCopyNumberGroups(parser.copy_number_groups)
-
-    # Parse our config file
     config = ConfigParser.RawConfigParser()
     config.read(parser.config_file)
-
-    # Parse our marker list to provide us with two pieces of data needed
-    # in our  calculations process:
-    #
-    #       1.) Groupings of markers (i.e. dhps436C Pure)
-    #       2.) Our combination marker genotypes (i.e. dhps double = dhps437G + dhps540E)
+    ageGroups = parseAgeGroups(config.get('GENERAL', 'age_groups'))
+    copyNumberGroups = parseCopyNumberGroups(config.get('GENERAL', 'copy_number_groups'))
     (markerGroups, markerCombos) = parseMarkerList(parser.marker_list)
 
-    # Now we can move onto generating our calculations
-    totalRows = generateTotalRows(config, parser.query_params, copyNumberGroups, markerCombos) 
-    #dataIter = createMysqlIterator(config, parser.query_params, copyNumberGroups, markerCombos)
-    #calculateWWARNStatistics(wwarnCalcDict, dataIter, ageGroups)
-    calculateWWARNStatistics(wwarnCalcDict, totalRows, ageGroups)
+    dataIter = createMysqlIterator(config, parser.study_ids, parser.sites, copyNumberGroups, markerCombos)
+    calculateWWARNStatistics(wwarnCalcDict, dataIter, ageGroups)
 
     # Before we can print our output we need to group all our statistics together under the 
     # categories and labels found in our marker map
@@ -405,11 +365,10 @@ def main(parser):
     #       1.) Statistics not grouped by age
     #       2.) Statistics grouped by age
     allFile = join(parser.output_directory, parser.output_prefix + '.all.calcs')
-    ageFile = join(parser.output_directory, parser.output_prefix + 'ags.calcs')
+    ageFile = join(parser.output_directory, parser.output_prefix + '.age.calcs')
 
-    write_statistics_to_file(groupedStats, allFile, ['All'])
-    write_statistics_to_file(groupedStats, ageFile, ageLabels)
+    write_statistics_to_file(groupedStats, allFile, ['All'], parser.debug)
+    write_statistics_to_file(groupedStats, ageFile, ageLabels, parser.debug)
 
 if __name__ == "__main__":
     main(buildArgParser())
-

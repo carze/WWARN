@@ -1,0 +1,61 @@
+pfcrt	76	K	Wild
+pfcrt	76	T	Mutant
+pfcrt	76	K/T	Mixed
+pfcrt	76	null	No data
+pfdhfr	51	N	Wild
+pfdhfr	51	I	Mutant
+pfdhfr	51	N/I	Mixed
+pfdhfr	51	null	No data
+pfdhfr	59	C	Wild
+pfdhfr	59	R	Mutant
+pfdhfr	59	C/R	Mixed
+pfdhfr	59	null	No data
+pfdhfr	108	S	Wild
+pfdhfr	108	N	Mutant
+pfdhfr	108	S/N	Mixed
+pfdhfr	108	null	No data
+pfdhfr	164	I	Wild
+pfdhfr	164	L	Mutant
+pfdhfr	164	I/L	Mixed
+pfdhfr	164	null	No data
+pfdhps	436	S	Wild
+pfdhps	436	A	Wild
+pfdhps	436	F	Mutant
+pfdhps	436	S/A	Wild
+pfdhps	436	S/F	Mixed
+pfdhps	436	A/F	Mixed
+pfdhps	436	null	No data
+pfdhps	437	A	Wild
+pfdhps	437	G	Mutant
+pfdhps	437	A/G	Mixed
+pfdhps	437	null	No data
+pfdhps	540	K	Wild
+pfdhps	540	E	Mutant
+pfdhps	540	K/E	Mixed
+pfdhps	540	null	No data
+pfdhps	581	A	Wild
+pfdhps	581	G	Mutant
+pfdhps	581	A/G	Mixed
+pfdhps	581	null	No data
+pfdhps	613	A	Wild
+pfdhps	613	S	Mutant
+pfdhps	613	T	Mutant
+pfdhps	613	A/S	Mixed
+pfdhps	613	A/T	Mixed
+pfdhps	613	S/T	Mutant
+pfmdr1	86	N	Wild
+pfmdr1	86	Y	Mutant
+pfmdr1	86	N/Y	Mixed
+pfmdr1	86	null	No data
+pfmdr1	184	Y	Wild
+pfmdr1	184	F	Mutant
+pfmdr1	184	Y/F	Mixed
+pfmdr1	184	null	No data
+pfmdr1	1034	S	Wild
+pfmdr1	1034	C	Mutant
+pfmdr1	1034	S/C	Mixed
+pfmdr1	1034	null	No data
+pfmdr1	1042	N	Wild
+pfmdr1	1042	D	Mutant
+pfmdr1	1042	N/D	Mixed
+pfmdr1	1042	null	No data

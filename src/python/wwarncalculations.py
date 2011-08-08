@@ -7,6 +7,7 @@ __email__ = "carze@som.umaryland.edu"
 __status__ = "Development"
 
 from collections import OrderedDict
+from wwarnutils import validateGenotypes
 
 ##
 # This library performs the necessary WWARN calculations to produce both prevalence 
@@ -41,25 +42,26 @@ def tabulateMarkerCounts(state, data, ageGroups):
     # Loop over each line of our input and pull out all the information we are
     # going to need to take accurate sample size and genotyped counts
     for line in data:
-        studyLabel = line[0]
-        investigator = line[1]
-        country = line[2]
-        site = line[3]
-        age = line[5]
+        wwarnStudyID = line[0]
+        studyLabel = line[1]
+        investigator = line[2]
+        country = line[3]
+        site = line[4]
+        age = line[6]
 
         # Our outer key in the calculations dictionary is a tuple containing 
         # some metadata: study label, country, site, investigator
-        metadataKey = (studyLabel, country, site, investigator)
+        metadataKey = (wwarnStudyID, studyLabel, country, site, investigator)
 
         # Check if our age is empty (empty string or NODATA) and if so set it
         # equal to None
-        if age in ['', 'NODATA']:
+        if age in ['', 'NODATA', 'NULL']:
             age = None
 
         # Split out our marker name + type combination and the genotype value 
         # from our last list element
-        markersKey = parseMarkerComponents(line[6])
-        genotypesKey = parseGenotypeValues(line[7]) 
+        markersKey = parseMarkerComponents(line[7])
+        genotypesKey = parseGenotypeValues(line[8]) 
         
         # Increment count for this marker
         incrementGenotypeCount(state, metadataKey, markersKey, genotypesKey, ageGroups, age)
@@ -72,8 +74,8 @@ def parseMarkerComponents(rawMarkerStr):
     """
     markerList = []
     
-    # Our markers will come in the format of <LOCUS NAME>_<LOCUS POS>_<GENOTYPE VAUE> 
-    # (e.x. pfcrt_76_A or pfdhps_540_E + pfdhps_437G)
+    # Our markers will come in the format of <LOCUS NAME>_<LOCUS POS>_<GENOTYPE VAUE>(_<MOLECULE_TYPE> if SNP)
+    # (e.x. pfcrt_76_A_AA or pfdhps_540_E_NT + pfdhps_437G_NT)
     if rawMarkerStr.find('+') != -1:
         # We are dealing with a marker combination here
         markers = rawMarkerStr.split(' + ')
@@ -82,11 +84,11 @@ def parseMarkerComponents(rawMarkerStr):
 
     for marker in markers:
         markerElems = marker.split('_')
-        
         locusName = markerElems[0]
+        
         # Only marker type SNP will carry a LOCUS_POS value
-        if marker.find('CN') != -1 or marker.find('FRAG') != -1:
-            locusPos = ''
+        if 'CN' in marker or 'FRAG' in marker:
+            locusPos = 0
         else:
             locusPos = markerElems[1]
 
@@ -121,14 +123,12 @@ def incrementGenotypeCount(dict, metaKey, markerKey, genotype, groups, age):
     If a group of ages is passed into this function we also want to categorize 
     all of our increments 
     """
-    # Check if our keys have already been initialized in our dictionary and if 
-    # not we want to do so and return 0
-    dict.setdefault(metaKey, {}).setdefault(markerKey, {}).setdefault(genotype, {}).setdefault('All', {}).setdefault('genotyped', 0)
+    dict.setdefault(metaKey, OrderedDict()).setdefault(markerKey, OrderedDict()).setdefault(genotype, OrderedDict()).setdefault('All', OrderedDict()).setdefault('genotyped', 0)
     genotypeAll = dict[metaKey][markerKey][genotype]['All']['genotyped']
     genotypeAll += 1
 
     # Initialize our sample size to 0 to avoid any errors
-    dict[metaKey][markerKey].setdefault('sample_size', {}).setdefault('All', 0)
+    dict[metaKey][markerKey].setdefault('sample_size', OrderedDict()).setdefault('All', 0)
 
     sampleAll = dict[metaKey][markerKey]['sample_size']['All']
     if validateGenotypes(genotype):
@@ -140,20 +140,6 @@ def incrementGenotypeCount(dict, metaKey, markerKey, genotype, groups, age):
     # If our age key is not None we need to add this age group
     if groups:
         incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age)
-
-def validateGenotypes(genotypes, invalidGenotypes=['Not Genotyped', 'Genotyping Failure']):
-    """
-    Validates our genotypes to ensure that they do not fall in one of 
-    the passed in invalid genotypes. 
-    """
-    validBool = True
-    
-    for genotype in genotypes:
-        if genotype in invalidGenotypes:
-            validBool = False            
-            break
-
-    return validBool
 
 def incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age):
     """
@@ -180,13 +166,9 @@ def incrementCountsByAgeGroup(dict, metaKey, markerKey, genotype, groups, age):
         #in the dictionary housing our statistics
         (lower, upper, label) = group   
 
-        # First initialize this level of nesting in our dictionary if it hasn't 
-        # already been initialized
         dict[metaKey][markerKey]['sample_size'].setdefault(label, 0)
-        dict[metaKey][markerKey][genotype].setdefault(label, {}).setdefault('genotyped', 0)
+        dict[metaKey][markerKey][genotype].setdefault(label, OrderedDict()).setdefault('genotyped', 0)
 
-        # Now increment the correct category that the patient providing this 
-        # data fell under
         if age is not None:
             if lower is None:
                 if float(age) < upper:
@@ -217,11 +199,10 @@ def calculatePrevalenceStatistic(data):
     Prevalence can be calculated by taking the total genotyped/CN and dividing it by 
     the sample size of the marker
     """    
-    # Need to loop over the dictionary and do our calculations
     for dataElemList in generateCountList(data):
         # If we are working with a 'genotype' or 'Genotyping failure' or 
         # 'No data' we want to skip prevalence calculations
-        if (dataElemList[2])[0] in ['Genotyping Failure', 'Not Genotyped']: continue
+        if not validateGenotypes(list(dataElemList[2])): continue
         
         sampleSize = dataElemList[4]
         markerGenotyped = dataElemList[5]

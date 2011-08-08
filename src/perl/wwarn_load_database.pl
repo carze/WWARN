@@ -2,24 +2,29 @@
 
 =head1 NAME
 
-wwarn_convert_to_mysql.cgi - CGI scripts that converts the WWARN template format to a MySQL ready format
+wwarn_load_database.pl - Script that proceses an
 
 =head1 SYNOPSIS
 
-./transform_WWARN_input.pl 
-        [--input_data_file=/path/to/input/file]
+./wwarn_load_database.pl
+        --input_data_file=/path/to/input/file
+        --config_file=/path/to/config/file
         
 =head1 PARAMETERS
 
 B<--input_data_file, -i>
     The input data files that should be transformed. This file should be a tab delimited
-    text file.
+    text file
+
+B<--config_file, -c >
+    The WWARN configuration file containing several key pieces of data needed to load the
+    database    
     
 =head1 DESCRIPTION            
 
-This CGI script takes a WWARN template formated tab-delimited file and parses out the relevant data
-to produce text files that map to the WWARN database tables (study, location, subject, sample, marker, genotype).
-These text files are ready to be loaded into their respective tables.
+This script takes a WWARN template formated tab-delimited file and parses out the relevant data
+to produce text files that map to the WWARN database tables (study, location, subject, sample, marker, genotype) 
+and proceeds to load these files into the database.
 
 =head1 INPUT
 
@@ -41,34 +46,27 @@ contain the parsed data in a MySQL ready format.
 
 use strict;
 use warnings;
-use FileHandle;
 use File::Basename;
 use Pod::Usage;		
 use DBI;
-use CGI qw(:standard);
-use JSON;
-use URI::Escape;
 use Config::IniFiles;	
+use Getopt::Long qw(:config no_ignore_case no_auto_abbrev);
 use Log::Log4perl qw(:easy);
 
 #----------------------------------------------------------
 # GLOBALS/COMMAND-LINE OPTIONS
 #----------------------------------------------------------
-$CGI::POST_MAX = 1024 * 10000;
-
 my $logger;
 my $cfg;
 my $dbh;
 my $mutant_status_lookup;
-my $LOG;
-my $json = new JSON;
-my $query = new CGI;
 
 Log::Log4perl->easy_init( { level => "ALL", file => "/tmp/wwarn_mysql.log" } );
 $logger = get_logger();                    
 
-#$my $input_file = &save_local_template_file( $query->param("input_data_file"), $query->upload("input_data_file") );
-my $input_file = param('input_data_file');
+my %opts = parse_options();
+my $input_file = $opts{'input_data_file'};
+my $cfg_file = $opts{'config_file'};
 
 ## Stores max ID's for each table
 my $MAX_IDS = { "study"     => 1,
@@ -90,53 +88,42 @@ my $new_samples = ();
 my $new_genotypes = ();
 my $new_markers = ();
 
-my $cfg_file = "/export/co/wwarn/conf/wwarn.ini";
 tie %$cfg, 'Config::IniFiles', ( -file => $cfg_file );
-my $db_server = $cfg->{'DB'}->{'hostname'} if ( exists($cfg->{'DB'}->{'hostname'}) ) || _log_errors("Server missing from DB config file.");
-my $db_name = $cfg->{'DB'}->{'database_name'} if ( exists($cfg->{'DB'}->{'database_name'}) ) || _log_errors("DB name missing from DB config file.");
-my $username = $cfg->{'DB'}->{'username'} if ( exists($cfg->{'DB'}->{'username'}) ) || _log_errors("Username missing from DB config file.");
-my $password = $cfg->{'DB'}->{'password'} if ( exists($cfg->{'DB'}->{'password'}) ) || _log_errors("Password missing from DB config file.");
+my $db_server = $cfg->{'DB'}->{'hostname'} if ( exists($cfg->{'DB'}->{'hostname'}) ) || $logger->logdie("Server missing from DB config file.");
+my $db_name = $cfg->{'DB'}->{'database_name'} if ( exists($cfg->{'DB'}->{'database_name'}) ) || $logger->logdie("DB name missing from DB config file.");
+my $username = $cfg->{'DB'}->{'username'} if ( exists($cfg->{'DB'}->{'username'}) ) || $logger->logdie("Username missing from DB config file.");
+my $password = $cfg->{'DB'}->{'password'} if ( exists($cfg->{'DB'}->{'password'}) ) || $logger->logdie("Password missing from DB config file.");
 my $mutant_status = $cfg->{'GENERAL'}->{'mutant_status'} if ( exists($cfg->{'GENERAL'}->{'mutant_status'}) ) || 
-                        _log_errors("Mutant status file missing from config file.");
+                        $logger->logdie("Mutant status file missing from config file.");
 my $output_dir = $cfg->{'GENERAL'}->{'output_directory'} if ( exists($cfg->{'GENERAL'}->{'output_directory'}) ) || 
-                        _log_errors("Output directory missing from config file.");
+                        $logger->logdie("Output directory missing from config file.");
 
 $CODON_LOOKUP = $cfg->{'CODON'};
 $OUT_FILES = $cfg->{'FILES'};
 $MUTANT_STATUS = $cfg->{'MUTANT_STATUS'};
 $SQL = $cfg->{'SQL'};
 
-print header("text/html");
-
 my $out_file_prefix = basename($input_file, (".txt", ".TXT"));
 
 $dbh = DBI->connect("DBI:mysql:database=$db_name;host=$db_server", "$username", "$password", 
-                    { RaiseError => 1, PrintError => 1 }) || _log_errors("Could not connect to database $DBI::errstr");
+                    { RaiseError => 1, PrintError => 1 }) || $logger->logdie("Could not connect to database $DBI::errstr");
 
 $MAX_IDS = &get_max_ids($MAX_IDS);
 
 $mutant_status_lookup = &parse_mutant_status_key($mutant_status);
 my $formatted_data = &parse_input_file($input_file);
 
-my $FOUT = &open_files($output_dir, $OUT_FILES);
+my $sql_out_files = &generate_out_files($output_dir, $OUT_FILES);
 
-my $study_row_count = print_sql_file($FOUT->{"study"}, $new_studies);
-my $location_row_count = print_sql_file($FOUT->{"location"}, $new_locations);
-my $subject_row_count = print_sql_file($FOUT->{"subject"}, $new_subjects);
-my $sample_row_count = print_sql_file($FOUT->{"sample"}, $new_samples);
-my $marker_row_count = print_sql_file($FOUT->{"marker"}, $new_markers);
-my $genotype_row_count = print_sql_file($FOUT->{"genotype"}, $new_genotypes);
+my $study_row_count = print_sql_file($sql_out_files->{"study"}, $new_studies);
+my $location_row_count = print_sql_file($sql_out_files->{"location"}, $new_locations);
+my $subject_row_count = print_sql_file($sql_out_files->{"subject"}, $new_subjects);
+my $sample_row_count = print_sql_file($sql_out_files->{"sample"}, $new_samples);
+my $marker_row_count = print_sql_file($sql_out_files->{"marker"}, $new_markers);
+my $genotype_row_count = print_sql_file($sql_out_files->{"genotype"}, $new_genotypes);
 
-$LOG->{'success'} = JSON::true;
-
-unshift(@{ $LOG->{'results'} }, { 'wwarn_logmsg' => "Number of markers to be added: $marker_row_count" } );
-unshift(@{ $LOG->{'results'} }, { 'wwarn_logmsg' => "Number of genotypes to be added: $genotype_row_count" } );
-unshift(@{ $LOG->{'results'} }, { 'wwarn_logmsg' => "Number of samples to be added: $sample_row_count" } );
-unshift(@{ $LOG->{'results'} }, { 'wwarn_logmsg' => "Number of sujbects to be added: $subject_row_count" } );
-unshift(@{ $LOG->{'results'} }, { 'wwarn_logmsg' => "Number of locations to be added: $location_row_count" } );
-unshift(@{ $LOG->{'results'} }, { 'wwarn_logmsg' => "Number of studies to be added: $study_row_count" } );
-
-print $json->encode(\%$LOG);
+my $db_backup = backup_database($db_server, $db_name, $username, $password, $out_file_prefix);
+load_database_files($dbh, $sql_out_files, $db_backup);
 
 ###############################################################################
 #####                          SUBROUTINES                                #####
@@ -149,11 +136,14 @@ sub print_sql_file {
     my ($out_file, $data) = @_;
     my $row_count = 0;
 
+    open(SQLOUT, "> $out_file");
+
 	foreach my $key ( sort { $data->{$a} <=> $data->{$b} } keys %$data) {
-		print $out_file join( "\t", ( $data->{$key}, split($;,$key) )  ) . "\n";
+		print SQLOUT join( "\t", ( $data->{$key}, split($;,$key) )  ) . "\n";
         $row_count++;
 	}
 	    
+    close(SQLOUT);        
     return $row_count;
 }
 
@@ -166,7 +156,7 @@ sub parse_input_file {
     my $genotypes_added;
     $logger->info("** In parse_input_file **");
        
-    open (INDATA, $data_file) or _log_errors("Could not open input data file $data_file: $!");
+    open (INDATA, $data_file) or $logger->logdie("Could not open input data file $data_file: $!");
     while (my $row = <INDATA>) {
         next if $row =~ /^\n/;
         chomp ($row);
@@ -179,8 +169,6 @@ sub parse_input_file {
             next;
         }
 
-        ## We want to make sure that we have marker data for this row before we do 
-        ## any extra processing.
         if ($#fields < 9) {
             $logger->warn("Row has no marker data: $row");
             next;
@@ -196,7 +184,6 @@ sub parse_input_file {
         my $doi = $fields[7];
         my $sample_date = $fields[8];        
                  
-		## If age is empty we want to set it to null
 		$age = "\\N" if ( ($age eq "") || ($age eq "NODATA") );
          
         my $db_study_id = &pull_or_create_new_study_db_id($row, $wwarn_study_id, $investigator, $study_label);
@@ -233,7 +220,6 @@ sub parse_input_file {
                 $molecule_type = ""
             }
 
-            ## If our marker type is SNP we can pull down a mutant status.
             if ($marker_type eq "SNP") {
             	$mutant_status = $mutant_status_lookup->{$locus_name}->{$locus_position}->{$value};
             	
@@ -271,7 +257,6 @@ sub pull_or_create_new_genotype_db_id {
     my $db_id;
     $logger->info("** In create_new_genotype_row **");
     
-    ## Check for duplicate row
     if ( defined($new_genotypes->{$sample_id, $marker_id, $val, $status, $mol_type}) ) {
         $logger->warn("Duplicate genotype skipping the following row: $row_line");
     } else {
@@ -300,7 +285,6 @@ sub pull_or_create_new_marker_db_id {
     my $db_id;
     $logger->info("** In create_new_marker_row **");
     
-    ## Check for duplicate row
     if ( defined($new_markers->{$name, $position, $type}) ) {
         $logger->warn("Duplicate marker row: $row_line");
         $db_id = $new_markers->{$name, $position, $type};
@@ -327,7 +311,6 @@ sub pull_or_create_new_sample_db_id {
     my $db_id;
     $logger->info("** In create_new_sample_row **");
     
-    ## Verify that we do not have a duplicate row here
     if ( defined($new_samples->{$subject_id, $collection_date}) ) {
         $logger->warn("Duplicate sample row: $row_line");
         $db_id = $new_samples->{$subject_id, $collection_date};
@@ -350,7 +333,6 @@ sub pull_or_create_new_subject_db_id {
     my $db_id;
     $logger->info("** In create_new_subject_row **");
     
-    ## Verify that we do not have a duplicate row here
     if ( defined($new_subjects->{$study_id, $location_id, $patient_id, $age, $doi}) ) {
         $logger->warn("Duplicate subject row: $row_line");
         $db_id = $new_subjects->{$study_id, $location_id, $patient_id, $age, $doi};
@@ -373,7 +355,6 @@ sub pull_or_create_new_location_db_id {
     my $db_id;
     $logger->info("** In create_new_location_row **");
     
-    ## Verify that we do not have a duplicate row here
     if ( defined($new_locations->{$study_id, $country, $site}) ) {
         $logger->warn("Duplicate location row: $row_line");
         $db_id = $new_locations->{$study_id, $country, $site};    
@@ -397,7 +378,6 @@ sub pull_or_create_new_study_db_id {
     my $db_id;
     $logger->info("** In create_new_study_row **");
     
-    ## Verify that we do not have a duplicate row here
     if ( defined($new_studies->{$study_id, $investigator, $label}) ) {
         $logger->warn("Duplicate study row: $row_line");
         $db_id = $new_studies->{$study_id, $investigator, $label};    
@@ -426,7 +406,7 @@ sub get_table_id_from_db {
         $sth->execute(@params);
         $id = $sth->fetchrow_array();
     };
-    _log_errors("Could not retrieve primary key from table $table: $@") if ($@);
+    $logger->logdie("Could not retrieve primary key from table $table: $@") if ($@);
     
     
     return $id;
@@ -450,7 +430,7 @@ sub parse_markers_from_header {
     
     ## We start with the 7th element because this should be where markers begin.
     ## Loop through the elements in the header and capture the locus name,
-    ## locus type and locus position (if it exists)
+    ## locus type, locus position (if it exists), and molecule type (if locus type is SNP)
     for (my $i = 9; $i < scalar (@header); $i++) {
         my $marker_header = $header[$i];
         next if ($marker_header eq ""); ## Excel adds a trailing tab to the header line
@@ -459,8 +439,6 @@ sub parse_markers_from_header {
         ##
         ##          <LOCUS_NAME>_<LOCUS_POSITION *OPTIONAL*>_<LOCUS_TYPE>_<MOLECULE_TYPE *OPTIONAL*>
         ## 
-        ## We need to check the type first to determine what processing will
-        ## be done
         my @elements = split(/_/, $marker_header);
 
         ## Based off the size of our array we can tell what kind of marker this is:
@@ -474,7 +452,8 @@ sub parse_markers_from_header {
             ## Dealing with either a copy number of fragment here, check to see what we have
             if      ($raw_marker_type eq "cn")   { $marker_type = "Copy Number"  }
             elsif   ($raw_marker_type eq "frag") { $marker_type = "Fragment"     }
-            else                                 { _log_errors("ERROR: Header " . join(" - ", @header) . "contains a malformed marker ($marker_header) type - $marker_type");
+            else                                 { $logger->logdie("ERROR: Header " . join(" - ", @header) . 
+                                                                    "contains a malformed marker ($marker_header) type - $marker_type");
                                                    next;                         }
 
             $marker_key->{$i} = { 'name' => $elements[0], 'type' => $marker_type };            
@@ -485,13 +464,14 @@ sub parse_markers_from_header {
 
             if      ($raw_molecule_type eq "aa") { $molecule_type = "Amino Acid"; }
             elsif   ($raw_molecule_type eq "nt") { $molecule_type = "Nucleotide"; }
-            else                                 { _log_error("ERROR: Header " . join(" - ", @header) . "contains a malformed molecule type ($raw_molecule_type)");
+            else                                 { $logger->logdie("ERROR: Header " . join(" - ", @header) .
+                                                                   "contains a malformed molecule type ($raw_molecule_type)");
                                                    next;                          }
 
             $marker_key->{$i} = { 'name' => $elements[0], 'type' => 'SNP', 'position' => $elements[1], 'molecule_type' => $molecule_type };            
         } else {
             # Don't know what we are dealing with here so just flag it as an error
-            _log_errors("ERROR: Header " . join(" - ", @header) . "contains a malformed marker ($marker_header)");
+            $logger->logdie("ERROR: Header " . join(" - ", @header) . "contains a malformed marker ($marker_header)");
         }         
     }
     
@@ -506,7 +486,7 @@ sub parse_mutant_status_key {
     my $mutant_key = ();
     $logger->info("** Parsing mutant status key **");
     
-    open (MUTANT, $mutant_status_file) or _log_errors("Could not open mutant status $mutant_status_file: $!");
+    open (MUTANT, $mutant_status_file) or $logger->logdie("Could not open mutant status $mutant_status_file: $!");
     while (my $line = <MUTANT>) {
         chomp ($line);
         
@@ -516,8 +496,6 @@ sub parse_mutant_status_key {
         ##
         my ($name, $position, $codon, $status) = split(/\t/, $line);
         
-        ## Want to make sure that our locus position, 
-        ## codon and mutant status are all well formed.
         next if ( &verify_position($line, $position) );
         next if ( &verify_codon($line, $codon) );
         next if ( &verify_mutant_status($line, $status) );
@@ -559,7 +537,6 @@ sub verify_codon {
         push (@codons, $codon_str);
     }
     
-    ## Check each codon to make sure it is a valid codon
     foreach my $codon (@codons) {
         unless ( exists($CODON_LOOKUP->{$codon} ) ) {
             $logger->warn("WARN: $line contains a malformed codon value - $codon_str");
@@ -609,20 +586,56 @@ sub get_max_ids {
 }
 
 #----------------------------------------------------------
-# open all output files
+# Create a hash of all our desired output files
 #----------------------------------------------------------
-sub open_files {
+sub generate_out_files {
     my ($out_dir, $files) = @_;
-    my $open_files = ();
+    my $sql_files = ();
     my $fh; 
     
     foreach my $table (keys %$files) {
         my $out_file = $out_dir . "/" . $out_file_prefix . $files->{$table};
-        $fh = FileHandle->new($out_file, "w");
-        $open_files->{$table} = $fh;                
+        $sql_files->{$table} = $out_file;                
     }
     
-    return $open_files;
+    return $sql_files;
+}
+
+#----------------------------------------------------------
+# Backups the WWARN database to a temporary file
+#----------------------------------------------------------
+sub backup_database {
+    my ($server, $db_name, $user, $passwd, $out_prefix) = @_;
+    my $backup_file = '/tmp/' . $out_prefix . '.dump';
+    run_system_cmd("mysqldump -h $server -u $user --password=$passwd $db_name > $backup_file");
+
+    return $backup_file;
+}
+
+#----------------------------------------------------------
+# trim white space from beginning/end of string
+#----------------------------------------------------------
+sub load_database_files {
+    my ($dbh, $db_files, $backup_file) = @_;
+    $dbh->{AutoCommit} = 0;
+
+    eval {
+        foreach my $table ('study', 'location', 'marker', 'subject', 'sample', 'genotype') {
+            my $file = $db_files->{$table};
+            my $stmt = "LOAD DATA LOCAL INFILE ? INTO TABLE $table";
+            my $sth = $dbh->prepare($stmt);
+            $sth->execute($file);
+        }
+
+        $dbh->commit();
+    };
+    if ($@) {
+        ## Something went wrong during loading so rollback anything we've done
+        eval { $dbh->rollback(); };
+        $logger->logdie("Error when loading data into database: $@");
+    } else {
+        unlink $backup_file;
+    }
 }
 
 #----------------------------------------------------------
@@ -633,39 +646,41 @@ sub trim {
 	$string =~ s/^\s+//;
 	$string =~ s/\s+$//;
 	return $string;
-   
 }
 
 #----------------------------------------------------------
-# saves the passed in template file to local disk to be
-# processed by the rest of the script.
+# Run system command and check return value.
 #----------------------------------------------------------
-sub save_local_template_file {
-    my ($filename, $filehandle) = @_;
-    my $local_file = "/tmp/$filename";
-    
-    ## If our filesize was over 10MB then we won't have a filename here and we can return a message error
-    _log_errors("Files over 10MB are not supported. Please split file and re-try") unless ($filename);
+sub run_system_cmd {
+    my $cmd = shift;
 
-    open(UPLOADFILE, ">$local_file") or _log_errors("Could not write to local file /tmp/$filename");
-    binmode UPLOADFILE;
+    my $ret_val = system($cmd);
+    $ret_val = $ret_val >> 8;
 
-    while (<$filehandle>) { print UPLOADFILE; }
-    close UPLOADFILE;
-
-    return $local_file;
+    if ($ret_val > 0) {
+        $logger->logdie("Could not execute command $cmd");
+    }
 }
 
 #----------------------------------------------------------
-# Writes out fatal errors to both a JSON object and 
-# the logger.
+# Parse command-line arguments.
 #----------------------------------------------------------
-sub _log_errors {
-    my $err_msg = shift;
-    my $json_err;
+sub parse_options {
+    my %options = ();
+    GetOptions( \%options,
+                'input_data_file|i=s',
+                'config_file|c=s',
+                'help|h') || $logger->logdie('Unprocessable options');
 
-    $json_err = { 'success' => JSON::false, 'msg' => uri_escape($err_msg), 'results' => [] };
-    print $json->encode(\%$json_err);
-    $logger->logdie($err_msg);
+    if ($options{'help'}) {
+        pod2usage( {-exitval=>0, -verbose=>2, -output => \*STDOUT} );
+    }
+
+    defined($options{'input_data_file'}) || $logger->logdie('Please provide a valid input data file');                
+    defined($options{'config_file'}) || $logger->logdie('Please provide a valid configuration file');
+
+    (-r $options{'input_data_file'}) || $logger->logdie('Input data file is unreadable');
+    (-r $options{'config_file'}) || $logger->logdie('Configuration file is unreadable');
+
+    return %options;
 }
-

@@ -10,13 +10,13 @@ BEGIN
 DECLARE select_string varchar(300);
 DECLARE from_string varchar(500);
 
-SET @select_string = CONCAT('SELECT s.label, s.investigator, l.country, l.site, p.patient_id, p.age, ' ,
+SET @select_string = CONCAT('SELECT s.wwarn_study_id, s.label, s.investigator, l.country, l.site, p.patient_id, p.age, ' ,
                             'CONCAT(m1.locus_name, "_", m1.locus_position, "_", m1.type, ' , 
                             '" + ", m2.locus_name, "_", m2.locus_position, "_", m2.type) AS "marker", ' ,
                             'CONCAT(g1.value, " + ", g2.value) AS "genotype" ');
 
 SET @from_string = CONCAT('FROM study s JOIN location l ON s.id_study = l.fk_study_id ' ,
-                    'JOIN subject p ON p.fk_location_id = l.id_location AND p.age IS NOT NULL ' ,
+                    'JOIN subject p ON p.fk_location_id = l.id_location ' ,
                     'JOIN sample sp1 ON sp1.fk_subject_id = p.id_subject ' ,
                     'JOIN genotype g1 ON g1.fk_sample_id = sp1.id_sample ' ,
                     'JOIN marker m1 ON m1.id_marker = g1.fk_marker_id ' ,
