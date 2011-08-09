@@ -138,7 +138,14 @@ def createFileIterator(inputFile, cnBins, year_step):
     """
     wwarnFH = open(inputFile)
 
-    wwarnHeader = [k for k in wwarnFH.readline().replace('#', '').rstrip('\n').split('\t') if len(k) != 0]   
+    # If we have metadata provided here we'll want to parse it out
+    header_line = wwarnFH.readline()
+    if header_line.startswith('#METADATA'):
+        metadata = parse_metadata_header(header_line)
+        year_step = metadata.get('year_step')
+        header_line = wwarnFH.readline()
+
+    wwarnHeader = [k for k in header_line.replace('#', '').rstrip('\n').split('\t') if len(k) != 0]   
     
     # If we are also binning by year we are going to want to create our bins 
     # prior to parsing all of the data
@@ -177,6 +184,23 @@ def createFileIterator(inputFile, cnBins, year_step):
 
             rowList = rowMeta + [ marker, genotype ]
             yield rowList
+
+def parse_metadata_header(metadata_header):
+    """
+    Parses any metadata in the header of a WWARN template file. This metadata
+    is defined by a #METADATA line:
+
+        #METADATA:year_step=1
+
+    A dictionary will be created out of the k=v pairs found in the header line        
+    """
+    metadata_dict = {}
+    metadata_elts = (metadata_header.rstrip('\n').split(':'))[1].split(',')
+
+    for (k, v) in [x.split('=') for x in metadata_elts]:
+        metadata_dict[k] = int(v)
+
+    return metadata_dict
 
 def preBinCopyNumberData(copyNum, bins):
     """
