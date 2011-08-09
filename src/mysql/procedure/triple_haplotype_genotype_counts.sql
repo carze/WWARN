@@ -11,7 +11,7 @@ BEGIN
 DECLARE select_string varchar(300);
 DECLARE from_string varchar(500);
 
-SET @select_string = CONCAT('SELECT s.wwarn_study_id, s.label, s.investigator, l.country, l.site, p.patient_id, p.age, ' ,
+SET @select_string = CONCAT('SELECT s.wwarn_study_id, s.label, s.investigator, l.country, l.site, p.patient_id, p.age, p.date_of_inclusion, ' ,
                             'CONCAT(m1.locus_name, "_", m1.locus_position, "_", m1.type, ' , 
                             '" + ", m2.locus_name, "_", m2.locus_position, "_", m2.type, ' ,
                             '" + ", m3.locus_name, "_", m3.locus_position, "_", m3.type) AS "marker", ' ,

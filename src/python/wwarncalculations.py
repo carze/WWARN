@@ -42,6 +42,7 @@ def tabulateMarkerCounts(state, data, ageGroups):
     # Loop over each line of our input and pull out all the information we are
     # going to need to take accurate sample size and genotyped counts
     for line in data:
+        print line
         wwarnStudyID = line[0]
         studyLabel = line[1]
         investigator = line[2]

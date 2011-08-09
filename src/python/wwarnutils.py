@@ -4,10 +4,13 @@
 # This module contains utility functions that are used across the WWARN 
 # calculation scripts
 #
+import MySQLdb
+import datetime
+
 from collections import OrderedDict
 from pprint import pprint as pp_pprint
 from wwarnexceptions import AgeGroupException, CopyNumberGroupException
-import MySQLdb
+
 
 def parseAgeGroups(groupsFile):
     """
@@ -166,3 +169,102 @@ def open_db_connection(hostname, db_name, username, password):
     """
     db_conn = MySQLdb.connect(host=hostname, user=username, passwd=password, db=db_name)
     return db_conn
+
+def create_year_bins(step, bounds):
+    """
+    Creates a list of tuples containing the pots to bin all our studies 
+    when creating calculations. Each tuple will contain datetime objects
+    containing the bounds of the bin, i.e. ('2007-02-01', '2009-02-01')
+    """
+    year_bins = {}
+
+    for (label, site, lower, upper) in bounds:
+        year_bins.setdefault(label, {})[site] = (date_range(lower, upper, datetime.timedelta(365 * step)))
+        
+    return year_bins 
+                
+def date_range(start, stop, step):
+    """
+    Generates a range of dates in the format (A, B), (B, C), (C, D) etc.
+    """
+    output = []
+
+    if start < stop:
+        cmp = lambda a, b: a < b
+        inc = lambda a: a + step
+    else:
+        cmp = lambda a, b: a > b
+        inc = lambda a: a - step
+
+    while cmp(start, stop):
+        end = inc(start)
+        output.append( (start, end) )  
+        start = end
+    
+    return output        
+
+def get_db_date_bounds(conn, query_components, params):
+    """
+    Gets the lower and upper bound dates for each project - site combination
+    in the WWARN db.
+    """
+    cursor = conn.cursor()
+
+    query = "SELECT s.label, l.site, MIN(p.date_of_inclusion), MAX(p.date_of_inclusion) " + query_components[1] + query_components[2]
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    cursor.close()           
+    
+    for row in rows:
+        yield row
+
+def get_template_date_bounds(template_fh):
+    """
+    Gets the lower and upper bound dates for each project - site combination
+    in a WWARN template file.
+    """
+    bounds = {} 
+    
+    # We need to loop over our file once to grab the bounds for each of our 
+    # project - site combinations.
+    for row in template_fh:
+        if all(s == '\t' for s in row.rstrip('\r\n')) or row.startswith('#'):
+            continue
+
+        row = row.rstrip('\n\r').split('\t')            
+        label = row[2]
+        country = row[3]
+        site = row[4]                    
+
+        doi = datetime.datetime.strptime(row[7], '%Y-%m-%d')
+
+        bounds.setdefault((label, site), {})
+        lower = bounds.get((label, site)).get('lower', None)
+        upper = bounds.get((label, site)).get('upper', None)
+        
+        if lower == None or doi < lower:
+            bounds[(label, site)]['lower'] = doi
+
+        if upper == None or doi > upper:
+            bounds[(label, site)]['upper'] = doi
+ 
+    # Reset the file handle to the beginning of the file
+    template_fh.seek(0, 0)
+
+    # Now we want to create a list comprehension generator to yield this information
+    for metadata in bounds:
+        yield [metadata[0], metadata[1], bounds.get(metadata).get('lower'),
+               bounds.get(metadata).get('upper')]
+
+def parse_site(site, label, doi, year_bins):
+    """
+    Attempts to bin a site using the generate year ranges if they were 
+    generated otherwise returns the site untouched.
+    """
+    if year_bins:
+        site_bins = year_bins[label][site]
+        for (lower, upper) in site_bins:
+            if lower <= doi < upper:
+                site = "%s_%s-%s" % (site, lower.year, upper.year)
+    
+    return site 

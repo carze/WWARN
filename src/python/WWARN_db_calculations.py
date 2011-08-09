@@ -9,6 +9,7 @@
 import MySQLdb
 import argparse
 import ConfigParser
+import datetime
 
 from collections import OrderedDict
 from os.path import join
@@ -33,6 +34,9 @@ def buildArgParser():
                         + "on which to query data upon and perform calculations on.")
     parser.add_argument('-si', "--sites", required=False, action='append', default=[], help="A specific site on which " 
                         + "to query data upon and perform calculations on.")
+    parser.add_argument("-b", "--bin-by-year", required=False, help="Bin all studies by a year range. " 
+                        + "This year range should be defined in a digit representing the number of years " 
+                        + "to create bins with (i.e. 1 = 1 year = 365 days)", type=int, dest="year_step")
     parser.add_argument("-d", "--debug", required=False, help="Turn on debug printing", action='store_const', const=True,
                         default=False)
     parser.add_argument("-o", "--output_directory", required=True, help="Desired output directory to write"
@@ -110,7 +114,7 @@ def commaDelimToTuple(str):
     """
     return tuple(str.split(','))
 
-def createMysqlIterator(config, studyIds, sites, cnBins, comboList):
+def createMysqlIterator(config, studyIds, sites, cnBins, comboList, year_step):
     """
     Takes a configuration file containing login credentials to the WWARN DB and 
     a set of query parameters to contruct a query to pull down data that will be 
@@ -125,26 +129,58 @@ def createMysqlIterator(config, studyIds, sites, cnBins, comboList):
 
     dbCursor.execute(query, params)
     rows = dbCursor.fetchall()
+    dbCursor.close()
 
     comboRows = getCombinationMarkerData(dbConn, queryList[2], params, comboList)
-    dbCursor.close()
     
+    ## If we are also splitting by year-bins we need to generate our year ranges
+    year_bins = None
+    if year_step:
+        # Will need the lower bound and upper bound of the dates in order to 
+        # generate our date bins
+        year_bounds = get_date_bounds(dbConn, queryList, params)
+        year_bins = create_year_bins(year_step, year_bounds)
+        print year_bins
+
+
     rows = rows[0:] + comboRows
     for row in list(rows):
-        marker = row[7]
-        genotype = row[8]
+        print row
+        label = row[1]
+        doi = row[7]
+        site = row[4]
+        marker = row[8]
+        genotype = row[9]
+
+        # Update our site if we are binning by years
+        site = parse_site(site, label, doi, year_bins)
+        row = row[0:4] + (site,) + row[5:7] + row[8:]
 
         # Convert to abbreviated format to match listing in valid marker file
         marker = marker.replace('Copy Number', 'CN')
         marker = marker.replace('Genotype Fragment', 'FRAG')
-
+        
+    
         # Check to see if our marker type is copy number (and in the future 
         # genotype fragment)
         if marker.find('CN') != -1 and genotype not in ['Genotyping Failure', 'Not Genotyped']:
             genotype = preBinCopyNumberData(genotype, cnBins)
-            row = row[0:7] + (marker, genotype)
+            row = row[0:8] + (marker, genotype)
 
         yield row
+    
+def parse_site(site, label, doi, year_bins):
+    """
+    Attempts to bin a site using the generate year ranges if they were 
+    generated otherwise returns the site untouched.
+    """
+    if year_bins:
+        site_bins = year_bins[label][site]
+        for (lower, upper) in site_bins:
+            if lower <= doi < upper:
+                site = "%s_%s-%s" % (site, lower.year, upper.year)
+    
+    return site 
 
 def buildQueryStatement(studyIds, sites):
     """
@@ -154,7 +190,7 @@ def buildQueryStatement(studyIds, sites):
     is convereted to CGI
     """
     selectStmt = "SELECT s.wwarn_study_id, s.label, s.investigator, l.country, l.site, p.patient_id, p.age, " \
-                 "CONCAT(m.locus_name, \"_\", m.locus_position, \"_\", m.type) AS \"marker\", g.value "
+                 "p.date_of_inclusion, CONCAT(m.locus_name, \"_\", m.locus_position, \"_\", m.type) AS \"marker\", g.value "
     fromStmt = "FROM study s JOIN location l ON s.id_study = l.fk_study_id " \
                "JOIN subject p ON p.fk_location_id = l.id_location " \
                "JOIN sample sp ON sp.fk_subject_id = p.id_subject " \
@@ -187,6 +223,53 @@ def buildWhereStmt(key, values):
     where += ") AND "
     return where
 
+def create_year_bins(step, bounds):
+    """
+    Creates a list of tuples containing the pots to bin all our studies 
+    when creating calculations. Each tuple will contain datetime objects
+    containing the bounds of the bin, i.e. ('2007-02-01', '2009-02-01')
+    """
+    year_bins = {}
+
+    for (label, site, lower, upper) in bounds:
+        year_bins.setdefault(label, {})[site] = (date_range(lower, upper, datetime.timedelta(365 * step)))
+        
+    return year_bins 
+                
+def date_range(start, stop, step):
+    """
+    Generates a range of dates in the format (A, B), (B, C), (C, D) etc.
+    """
+    output = []
+
+    if start < stop:
+        cmp = lambda a, b: a < b
+        inc = lambda a: a + step
+    else:
+        cmp = lambda a, b: a > b
+        inc = lambda a: a - step
+
+    while cmp(start, stop):
+        end = inc(start)
+        output.append( (start, end) )  
+        start = end
+    
+    return output        
+
+def get_date_bounds(conn, query_components, params):
+    """
+    Gets the lower and upper bound of dates for the given study.
+    """
+    cursor = conn.cursor()
+
+    query = "SELECT s.label, l.site, MIN(p.date_of_inclusion), MAX(p.date_of_inclusion) " + query_components[1] + query_components[2]
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+    cursor.close()           
+    
+    for row in rows:
+        yield row
+    
 def openDBConnection(config):
     """
     Opens a database connection to the specified database using the provided
@@ -353,7 +436,7 @@ def main(parser):
     copyNumberGroups = parseCopyNumberGroups(config.get('GENERAL', 'copy_number_groups'))
     (markerGroups, markerCombos) = parseMarkerList(parser.marker_list)
 
-    dataIter = createMysqlIterator(config, parser.study_ids, parser.sites, copyNumberGroups, markerCombos)
+    dataIter = createMysqlIterator(config, parser.study_ids, parser.sites, copyNumberGroups, markerCombos, parser.year_step)
     calculateWWARNStatistics(wwarnCalcDict, dataIter, ageGroups)
 
     # Before we can print our output we need to group all our statistics together under the 

@@ -8,11 +8,13 @@ import ConfigParser
 from wwarncalculations import calculateWWARNStatistics
 from wwarnexceptions import AgeGroupException, CopyNumberGroupException
 from collections import OrderedDict
-from wwarnutils import validateGenotypes
+from wwarnutils import (validateGenotypes, create_year_bins, 
+                        get_template_date_bounds, parse_site)
+from datetime import datetime
 
 # A white list of columns that we want to capture and pass into our calculations
 # code
-META_COL = ['STUDY_ID', 'STUDY_LABEL', 'INVESTIGATOR', 'COUNTRY', 'SITE', 'AGE', 'PATIENT_ID']
+META_COL = ['STUDY_ID', 'STUDY_LABEL', 'INVESTIGATOR', 'COUNTRY', 'SITE', 'AGE', 'PATIENT_ID', 'DATE_OF_INCLUSION']
 
 def buildArgParser():
     """
@@ -26,6 +28,9 @@ def buildArgParser():
                             + 'required for execution of the calculations script.')
     parser.add_argument('-m', '--marker_list', required=False, help='A list of all possible markers that should be '
                             + 'looked at in tabulating these statistics.')
+    parser.add_argument("-b", "--bin-by-year", required=False, help="Bin all studies by a year range. " 
+                            + "This year range should be defined in a digit representing the number of years " 
+                                                    + "to create bins with (i.e. 1 = 1 year = 365 days)", type=int, dest="year_step")
     parser.add_argument('-o', '--output_file', required=True, help='Desired output file containing WWARN calculations.')
     args = parser.parse_args()
 
@@ -126,7 +131,7 @@ def parseMarkerList(markerListFile):
 
     return validGenotypes
 
-def createFileIterator(inputFile, cnBins):
+def createFileIterator(inputFile, cnBins, year_step):
     """
     Takes an input file and creates a generateor of said file returning
     a line in dictionary form (with headers as k-v pairs)
@@ -135,13 +140,25 @@ def createFileIterator(inputFile, cnBins):
 
     wwarnHeader = [k for k in wwarnFH.readline().replace('#', '').rstrip('\n').split('\t') if len(k) != 0]   
     
+    # If we are also binning by year we are going to want to create our bins 
+    # prior to parsing all of the data
+    if year_step:
+        bounds = get_template_date_bounds(wwarnFH)
+        year_bins = create_year_bins(year_step, bounds)
+
     for row in wwarnFH:
-        if all(s == '\t' for s in row.rstrip('\r\n')):
+        if all(s == '\t' for s in row.rstrip('\r\n')) or row.startswith('#'):
             continue
     
         rowMeta = [v for (k,v) in zip(wwarnHeader, row.rstrip('\n').split('\t')) if k in META_COL]
+
+        # If we are binning by years we'll need to modify our site to include the year range.
+        rowMeta[-1] = datetime.strptime(rowMeta[-1], '%Y-%m-%d')
+        rowMeta[4] = parse_site(rowMeta[4], rowMeta[2], rowMeta[-1], year_bins)
+        del rowMeta[-1] # Remove the DOI when we are done with it
+
         dataElems = row.rstrip('\n').split('\t')
-        
+
         # Instead of looping over the number of elements in the dataElems list we 
         # want to loop over the header to make sure we don't try to pull in any extra
         # blank spaces at the end of the line
@@ -324,7 +341,7 @@ def main(parser):
     copyNumGroups = parseCopyNumberGroups(config.get('GENERAL', 'copy_number_groups'))
     markerGenotypes = parseMarkerList(parser.marker_list)
 
-    calculateWWARNStatistics(wwarnDataDict, createFileIterator(parser.input_file, copyNumGroups), ageGroups)
+    calculateWWARNStatistics(wwarnDataDict, createFileIterator(parser.input_file, copyNumGroups, parser.year_step), ageGroups)
     createOutputWWARNTables(wwarnDataDict, markerGenotypes, parser.output_file)
 
 if __name__ == "__main__":
