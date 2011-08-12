@@ -42,7 +42,6 @@ def tabulateMarkerCounts(state, data, ageGroups):
     # Loop over each line of our input and pull out all the information we are
     # going to need to take accurate sample size and genotyped counts
     for line in data:
-        print line
         wwarnStudyID = line[0]
         studyLabel = line[1]
         investigator = line[2]
@@ -63,7 +62,7 @@ def tabulateMarkerCounts(state, data, ageGroups):
         # from our last list element
         markersKey = parseMarkerComponents(line[7])
         genotypesKey = parseGenotypeValues(line[8]) 
-        
+
         # Increment count for this marker
         incrementGenotypeCount(state, metadataKey, markersKey, genotypesKey, ageGroups, age)
     

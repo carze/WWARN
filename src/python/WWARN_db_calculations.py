@@ -130,7 +130,7 @@ def createMysqlIterator(config, studyIds, sites, cnBins, comboList, year_step):
     dbCursor.execute(query, params)
     rows = dbCursor.fetchall()
     dbCursor.close()
-
+    rows = []
     comboRows = getCombinationMarkerData(dbConn, queryList[2], params, comboList)
     
     ## If we are also splitting by year-bins we need to generate our year ranges
@@ -140,12 +140,9 @@ def createMysqlIterator(config, studyIds, sites, cnBins, comboList, year_step):
         # generate our date bins
         year_bounds = get_date_bounds(dbConn, queryList, params)
         year_bins = create_year_bins(year_step, year_bounds)
-        print year_bins
-
 
     rows = rows[0:] + comboRows
     for row in list(rows):
-        print row
         label = row[1]
         doi = row[7]
         site = row[4]
@@ -317,7 +314,7 @@ def getCombinationMarkerData(conn, where_stmt, params, combinations):
 
     return results       
 
-def write_statistics_to_file(stats, outFile, groups, debug):
+def write_statistics_to_file(stats, outFile, groups, year_step, debug):
     """
     Writes out a subset of our calculation data using the 
     groups list passed in
@@ -325,8 +322,9 @@ def write_statistics_to_file(stats, outFile, groups, debug):
     calcsFH = open(outFile, 'w')
 
     # Write our header to file
-    header = ['STUDY_ID', 'STUDY_LABEL', 'COUNTRY', 'SITE', 'INVESTIGATOR',
-               'GROUP', 'MARKER', 'GENOTYPE', 'SAMPLE SIZE', 'PREVALENCE']
+    header = ['STUDY_ID', 'STUDY_LABEL', 'COUNTRY', 'SITE', 'YEAR GROUP',
+              'INVESTIGATOR', 'GROUP', 'MARKER', 'GENOTYPE', 'SAMPLE SIZE', 
+              'PREVALENCE']
 
     if debug:
         header.extend(['PREVALENCE RAW', 'GENOTYPED'])
@@ -354,7 +352,17 @@ def write_statistics_to_file(stats, outFile, groups, debug):
                     genotyped = str(genotypesIter[genotype][group]['genotyped'])
 
                     rowList = []
-                    rowList.extend(list(metadata))
+                
+                    # If we are dealing with year step here we are going to
+                    # want to split our site on '_'
+                    metadata_list = list(metadata)
+                    if year_step:
+                        site_yr_str = metadata_list[3]
+                        (site, year_group) = site_yr_str.split('_', 2)
+                        metadata_list[3] = site
+                        metadata_list[4:4] = [year_group]
+
+                    rowList.extend(metadata_list)
                     rowList.append(group)
                     rowList.append(marker)
                     rowList.append(genotype)
@@ -450,8 +458,8 @@ def main(parser):
     allFile = join(parser.output_directory, parser.output_prefix + '.all.calcs')
     ageFile = join(parser.output_directory, parser.output_prefix + '.age.calcs')
 
-    write_statistics_to_file(groupedStats, allFile, ['All'], parser.debug)
-    write_statistics_to_file(groupedStats, ageFile, ageLabels, parser.debug)
+    write_statistics_to_file(groupedStats, allFile, ['All'], parser.year_step, parser.debug)
+    write_statistics_to_file(groupedStats, ageFile, ageLabels, parser.year_step, parser.debug)
 
 if __name__ == "__main__":
     main(buildArgParser())

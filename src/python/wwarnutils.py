@@ -11,6 +11,11 @@ from collections import OrderedDict
 from pprint import pprint as pp_pprint
 from wwarnexceptions import AgeGroupException, CopyNumberGroupException
 
+def commaDelimToTuple(str):
+    """
+    Splits a comma-delimited list and converts it to a tuple
+    """
+    return tuple(str.split(','))
 
 def parseAgeGroups(groupsFile):
     """

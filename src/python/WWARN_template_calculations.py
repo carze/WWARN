@@ -8,8 +8,8 @@ import ConfigParser
 from wwarncalculations import calculateWWARNStatistics
 from wwarnexceptions import AgeGroupException, CopyNumberGroupException
 from collections import OrderedDict
-from wwarnutils import (validateGenotypes, create_year_bins, 
-                        get_template_date_bounds, parse_site)
+from wwarnutils import (validateGenotypes, create_year_bins, pprint,
+                        get_template_date_bounds, parse_site, commaDelimToTuple)
 from datetime import datetime
 
 # A white list of columns that we want to capture and pass into our calculations
@@ -117,21 +117,48 @@ def parseCopyNumberGroups(groupsFile):
 
 def parseMarkerList(markerListFile):
     """
-    Parses the optional list of valid genotypes for a given marker and returns
-    a dictionary that can be used to look up all of these genotypes. This is useful
-    if we want to see which genotypes were not genotyped in a set of data
+    Parses the list of valid genotypes for a given marker and returns
+    a dictionary that can be used to look up all of these genotypes. 
+    This dictionary also contains a lookup table for our combination
+    markers to provide abbreviated names when generating table output
     """
-    validGenotypes = OrderedDict()
+    markerMap = OrderedDict()
 
     genotypeListFH = open(markerListFile)
     for line in genotypeListFH:
-        (marker, genotypes) = line.rstrip('\n').split('\t')
+        if line.startswith('#'):
+            continue
+            
+        elts = line.strip().split('\t')            
+        names = commaDelimToTuple(elts[0])
+        positions = commaDelimToTuple(elts[1])
+        genotypes = commaDelimToTuple(elts[3])
+        
+        # We want to create a tuple combining our marker names + positions 
+        # to mainly represent occurances of our combination markers
+        markerPosTuple = tuple(zip(names, positions))
+        markerMap.setdefault(markerPosTuple, OrderedDict())
+        markerMap.get(markerPosTuple).setdefault('valid', [])
 
-        validGenotypes[marker] = [(x,) for x in genotypes.split(',')]
+        # If we have more than one marker name in our tuple we are dealing
+        # with a combination marker
+        if len(names) > 1:
+            category = elts[4]
+            label = elts[5]
 
-    return validGenotypes
+            if not label in markerMap.get(markerPosTuple).get('valid'):
+                markerMap.get(markerPosTuple).get('valid').append(label)    
 
-def createFileIterator(inputFile, cnBins, year_step):
+            markerMap.get(markerPosTuple).setdefault(genotypes, OrderedDict())
+            markerMap[markerPosTuple]['category'] = category
+            markerMap[markerPosTuple][genotypes]['label'] = label
+        else:
+            markerMap.get(markerPosTuple).get('valid').extend(elts[3].split(','))    
+
+    genotypeListFH.close()
+    return markerMap
+
+def createFileIterator(inputFile, cnBins, markerMap, year_step):
     """
     Takes an input file and creates a generateor of said file returning
     a line in dictionary form (with headers as k-v pairs)
@@ -165,14 +192,18 @@ def createFileIterator(inputFile, cnBins, year_step):
         del rowMeta[-1] # Remove the DOI when we are done with it
 
         dataElems = row.rstrip('\n').split('\t')
-
+        
         # Instead of looping over the number of elements in the dataElems list we 
         # want to loop over the header to make sure we don't try to pull in any extra
         # blank spaces at the end of the line
-        for i in range(9, len(wwarnHeader)):
-            marker = wwarnHeader[i]
-            genotype = dataElems[i]
+        markerData = zip(wwarnHeader[9:], dataElems[9:])
 
+        # Get our combination markers data
+        combinationMarkers = getCombinationMarkers(dict(markerData),
+                       [k for k in markerMap.keys() if len(k) >= 2])
+        markerData = markerData + combinationMarkers
+
+        for (marker, genotype) in markerData:
             if len(genotype) == 0: continue
 
             # We want to check to see if we are dealing with a marker of type copy number
@@ -182,9 +213,36 @@ def createFileIterator(inputFile, cnBins, year_step):
                 # value into one of the categories provided via command line
                 genotype = preBinCopyNumberData(genotype, cnBins)
 
-            rowList = rowMeta + [ marker, genotype ]
+            rowList = rowMeta + [ marker, genotype.strip() ]
             yield rowList
 
+def getCombinationMarkers(markerData, comboLookup):
+    """
+    Examines a row of markers/genotypes from the data file and identifies
+    all combination markers that exist in the current row of data.
+    """
+    comboMarkerData = []
+        
+    # Convert the list of of markers into         
+    inputMarkerSet = set(([tuple(z.replace('_SNP_AA', '',).split('_')) for z in markerData.keys()]))
+           
+    for comboMarker in comboLookup:
+        comboSet = set(comboMarker)
+
+        if comboSet.issubset(inputMarkerSet):
+            # We now know that this combination marker exists in our data set
+            # so we need to add it to our marker data list
+            markers = []
+            genotypes = []
+            for (marker, pos) in comboMarker:
+                markerStr = "%s_%s_SNP_AA" % (marker, pos)
+                markers.append(markerStr)
+                genotypes.append(markerData.get(markerStr))
+
+            comboMarkerData.append((" + ".join(markers), " + ".join(genotypes)))                
+    
+    return comboMarkerData                
+               
 def parse_metadata_header(metadata_header):
     """
     Parses any metadata in the header of a WWARN template file. This metadata
@@ -194,7 +252,7 @@ def parse_metadata_header(metadata_header):
 
     A dictionary will be created out of the k=v pairs found in the header line        
     """
-    metadata_dict = {}
+    metadata_dict = OrderedDict()
     metadata_elts = (metadata_header.rstrip('\n').split(':'))[1].split(',')
 
     for (k, v) in [x.split('=') for x in metadata_elts]:
@@ -258,10 +316,16 @@ def createOutputWWARNTables(data, genotypeList, output):
     
     # We need to grab (and sort) all the genotypes we will be dealing with
     # for this input file
-    for outDict in generateOutputDict(data):
+    for outDict in generateOutputDict(data, genotypeList):
         for (locusTuple, siteIter) in outDict.iteritems():
-            markerName = locusTuple[0][0] + locusTuple[0][1]
-            header = genotypeList[markerName]
+            # Check if we are dealing with a combination marker first
+            header = []
+            if len(locusTuple) > 1:
+                header = getValidComboMarkers(locusTuple, genotypeList)
+                header.extend(['Not Genotyped', 'Genotyping Failure'])
+                locusTuple = getPrettyComboMarkerLabel(locusTuple, genotypeList)
+            else:
+                header = genotypeList[locusTuple].get('valid')
 
             wwarnOut.write( " ".join(locusTuple[0]) + "\n" )
             wwarnOut.write( "Site\tAge group\tSample size\t%s\n" % "\t".join(["%s" % e for e in header]) )
@@ -276,14 +340,14 @@ def createOutputWWARNTables(data, genotypeList, output):
                     wwarnOut.write("\t%s\t%s" % (group, groupsIter[group]['sample_size']))
 
                     for genotype in header:
-                        statistic = genotypesIter.get(genotype, 0)
+                        statistic = genotypesIter.get(tuple(genotype), 0)
 
                         # When dealing with our mixed genotypes we must make sure to check both 
                         # the A/B combination and the B/A combination
                         if statistic == 0 and genotype[0].find('/') != -1:
-                            statistic = genotypesIter.get(genotype[::-1], 0)
+                            statistic = genotypesIter.get(tuple(genotype[::-1]), 0)
 
-                        if validateGenotypes(list(genotype)):
+                        if validateGenotypes([genotype]):
                             statistic = "{0:.0%}".format(statistic)
 
                         wwarnOut.write("\t%s" % (statistic))
@@ -291,7 +355,41 @@ def createOutputWWARNTables(data, genotypeList, output):
                     wwarnOut.write("\n")
             wwarnOut.write("\n")
 
-def generateOutputDict(data):
+def getPrettyComboMarkerLabel(comboMarker, markerMap):
+    """
+    Retrieves the pretty name for our combo markers (i.e. pfdhps 540 + 
+    pfdhps 437 -->  pfdhps double)
+    """       
+    prettyName = None
+
+    inputMarkerSet = set(comboMarker)
+    for combo in [x for x in markerMap.keys() if len(x) > 1]:
+        comboSet = set(combo)
+
+        if inputMarkerSet.issubset(comboSet):
+            prettyName = markerMap.get(combo).get('category')
+            break
+
+    return [(prettyName,)]
+
+def getValidComboMarkers(comboMarker, markerMap):
+    """
+    Retrieves the valid combo marker genotypes. This is done by checking the 
+    marker map against the passed in marker using set operations
+    """
+    validGenotypes = []
+
+    inputMarkerSet = set(comboMarker)
+    for combo in [x for x in markerMap.keys() if len(x) > 1]:
+        comboSet = set(combo)
+
+        if inputMarkerSet.issubset(comboSet):
+            validGenotypes = markerMap.get(combo).get('valid')
+            break
+
+    return validGenotypes           
+
+def generateOutputDict(data, map):
     """
     Generates a more "friendly" output data structure to iterate over when printout 
     out the sample size and prevalence tables for the WWARN contributor report.
@@ -303,7 +401,7 @@ def generateOutputDict(data):
     """
     outputDict = OrderedDict()
     prevSite = None
-
+    
     for (metadataKey, locusIter) in data.iteritems():
         site = metadataKey[3]
         if prevSite is not None and site != prevSite:
@@ -313,10 +411,16 @@ def generateOutputDict(data):
         
         for (markerKey, genotypesIter) in locusIter.iteritems():
             outputDict.setdefault(markerKey, OrderedDict()).setdefault(site, OrderedDict())
-        
+
             for genotype in genotypesIter:
                 sortedGroups = genotypesIter[genotype].keys()
-               
+             
+                # If we are working with a combination marker we will want to 
+                # use our 'pretty' name for our genotypes
+                label = None
+                if len(markerKey) > 1:
+                    label = getComboMarkerLabel(map.get(markerKey), genotype)
+                                  
                 for group in sortedGroups:
                     outputDict[markerKey][site].setdefault(group, OrderedDict())
 
@@ -324,18 +428,51 @@ def generateOutputDict(data):
                         sampleSize = locusIter[markerKey]['sample_size'][group]
                         outputDict[markerKey][site][group]['sample_size'] = sampleSize
                     else:                         
-                        outputDict[markerKey][site][group].setdefault(genotype, OrderedDict())
+                        #outputDict[markerKey][site][group].setdefault(genotype, OrderedDict())
 
                         # If our 'genotype' is Not genotyped or Genotyping failure we 
                         # want to get the number of occurances of these instead of the prevalence
                         if validateGenotypes(list(genotype)):
                             prevalence = genotypesIter[genotype][group]['prevalence']
-                            outputDict[markerKey][site][group][genotype] = prevalence
+                            
+                            if label:
+                                outputDict.get(markerKey).get(site).get(group).setdefault(label, 0)
+                                outputDict[markerKey][site][group][label] += prevalence
+                            else:                                
+                                outputDict.get(markerKey).get(site).get(group).setdefault(genotype, 0)
+                                outputDict[markerKey][site][group][genotype] += prevalence
+
                         else:                            
                             genotypeCount = genotypesIter[genotype][group]['genotyped']
-                            outputDict[markerKey][site][group][genotype] = genotypeCount
+
+                            if label:
+                                outputDict[markerKey][site][group].setdefault(label, 0)
+                                outputDict[markerKey][site][group][label] += genotypeCount
+                            else:
+                                outputDict[markerKey][site][group].setdefault(genotype, 0)
+                                outputDict[markerKey][site][group][genotype] += genotypeCount
 
     yield outputDict
+
+def getComboMarkerLabel(map, genotype):
+    """
+    Retrieves the label for a given combination marker. Because the ordering
+    of markers within a combination can be different we must convert everything
+    to sets to check whether or not we have a match
+    """
+    label = None
+
+    for (comboMarker, metadata) in map.items(): 
+        if comboMarker == 'valid':
+            continue
+
+        comboSet = set(comboMarker)
+        genotypeSet = set(genotype)
+        
+        if comboSet.issubset(genotypeSet):
+            label = tuple(metadata.get('label'))
+            
+    return label                                      
 
 def parseHeaderList(headerList):
     """
@@ -363,10 +500,10 @@ def main(parser):
     config.read(parser.config_file)
     ageGroups = parseAgeGroups(config.get('GENERAL', 'age_groups'))
     copyNumGroups = parseCopyNumberGroups(config.get('GENERAL', 'copy_number_groups'))
-    markerGenotypes = parseMarkerList(parser.marker_list)
+    markerMap = parseMarkerList(parser.marker_list)
 
-    calculateWWARNStatistics(wwarnDataDict, createFileIterator(parser.input_file, copyNumGroups, parser.year_step), ageGroups)
-    createOutputWWARNTables(wwarnDataDict, markerGenotypes, parser.output_file)
+    calculateWWARNStatistics(wwarnDataDict, createFileIterator(parser.input_file, copyNumGroups, markerMap, parser.year_step), ageGroups)
+    createOutputWWARNTables(wwarnDataDict, markerMap, parser.output_file)
 
 if __name__ == "__main__":
     main(buildArgParser())        
