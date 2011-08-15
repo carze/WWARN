@@ -88,7 +88,9 @@ def parseMarkerComponents(rawMarkerStr):
         
         # Only marker type SNP will carry a LOCUS_POS value
         if 'CN' in marker or 'FRAG' in marker:
-            locusPos = 0
+            # Reconstruct our locus name so it looks something like: pfmdr1 CN
+            locusName = "%s %s" % (locusName,markerElems[1])
+            locusPos = ""
         else:
             locusPos = markerElems[1]
 

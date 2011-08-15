@@ -132,6 +132,7 @@ def parseMarkerList(markerListFile):
         elts = line.strip().split('\t')            
         names = commaDelimToTuple(elts[0])
         positions = commaDelimToTuple(elts[1])
+        type = elts[2]
         genotypes = commaDelimToTuple(elts[3])
         
         # We want to create a tuple combining our marker names + positions 
@@ -176,6 +177,7 @@ def createFileIterator(inputFile, cnBins, markerMap, year_step):
     
     # If we are also binning by year we are going to want to create our bins 
     # prior to parsing all of the data
+    year_bins = None
     if year_step:
         bounds = get_template_date_bounds(wwarnFH)
         year_bins = create_year_bins(year_step, bounds)
@@ -331,7 +333,13 @@ def createOutputWWARNTables(data, genotypeList, output):
                 header.extend(['Not Genotyped', 'Genotyping Failure'])
                 locusTuple = getPrettyComboMarkerLabel(locusTuple, genotypeList)
             else:
-                header = genotypeList[locusTuple].get('valid')
+                if locusTuple in genotypeList:
+                    header = genotypeList[locusTuple].get('valid')
+                else:   
+                    # This marker doesn't exist in our marker lookup
+                    print "DEBUG: Skipping %s because it doesn't exist in our lookup" % (str(locusTuple))
+                    continue;                        
+                                    
 
             wwarnOut.write( " ".join(locusTuple[0]) + "\n" )
             wwarnOut.write( "Site\tAge group\tSample size\t%s\n" % "\t".join(["%s" % e for e in header]) )
@@ -420,7 +428,7 @@ def generateOutputDict(data, map):
         
         for (markerKey, genotypesIter) in locusIter.iteritems():
             outputDict.setdefault(markerKey, OrderedDict()).setdefault(site, OrderedDict())
-
+        
             for genotype in genotypesIter:
                 sortedGroups = genotypesIter[genotype].keys()
              
@@ -429,7 +437,7 @@ def generateOutputDict(data, map):
                 label = None
                 if len(markerKey) > 1:
                     label = getComboMarkerLabel(map.get(markerKey), genotype)
-                                  
+
                 for group in sortedGroups:
                     outputDict[markerKey][site].setdefault(group, OrderedDict())
 
@@ -437,8 +445,6 @@ def generateOutputDict(data, map):
                         sampleSize = locusIter[markerKey]['sample_size'][group]
                         outputDict[markerKey][site][group]['sample_size'] = sampleSize
                     else:                         
-                        #outputDict[markerKey][site][group].setdefault(genotype, OrderedDict())
-
                         # If our 'genotype' is Not genotyped or Genotyping failure we 
                         # want to get the number of occurances of these instead of the prevalence
                         if validateGenotypes(list(genotype)):
