@@ -234,12 +234,18 @@ def getCombinationMarkers(markerData, comboLookup):
             # so we need to add it to our marker data list
             markers = []
             genotypes = []
+
             for (marker, pos) in comboMarker:
                 markerStr = "%s_%s_SNP_AA" % (marker, pos)
                 markers.append(markerStr)
                 genotypes.append(markerData.get(markerStr))
 
-            comboMarkerData.append((" + ".join(markers), " + ".join(genotypes)))                
+            if "Not Genotyped" in genotypes:
+                comboMarkerData.append((" + ".join(markers), "Not Genotyped"))
+            elif "Genotyping Failure" in genotypes:
+                comboMarkerData.append((" + ".join(markers), "Genotyping Failure"))
+            else:                
+                comboMarkerData.append((" + ".join(markers), " + ".join(genotypes)))                
     
     return comboMarkerData                
                
@@ -340,8 +346,11 @@ def createOutputWWARNTables(data, genotypeList, output):
                     wwarnOut.write("\t%s\t%s" % (group, groupsIter[group]['sample_size']))
 
                     for genotype in header:
-                        statistic = genotypesIter.get(tuple(genotype), 0)
-
+                        if genotype == "Not Genotyped" or genotype == "Genotyping Failure":                        
+                            statistic = genotypesIter.get(tuple([genotype]), 0)
+                        else:
+                            statistic = genotypesIter.get(tuple(genotype), 0)
+                        
                         # When dealing with our mixed genotypes we must make sure to check both 
                         # the A/B combination and the B/A combination
                         if statistic == 0 and genotype[0].find('/') != -1:
